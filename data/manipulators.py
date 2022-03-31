@@ -11,6 +11,7 @@ def loadScaler():
 
 def applyScaler(df, featuresToScale, scaler):
     # print(df[featuresToScale])
+    # scaledDf = pd.DataFrame(scaler.transform(df[featuresToScale]), columns=featuresToScale)
     df[featuresToScale] = scaler.transform(df[featuresToScale])
     # print(df[featuresToScale])
     return df
@@ -28,7 +29,7 @@ def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
         scaler = StandardScaler()
     else:
         raise ValueError(f'scalerType [{scalerType}] unsupported!')
-
+    
     df[featuresToScale] = scaler.fit_transform(df[featuresToScale])
     return df, scaler
 

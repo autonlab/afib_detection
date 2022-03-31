@@ -1,11 +1,11 @@
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import PrecisionRecallDisplay, classification_report
+from sklearn.linear_model import LogisticRegression
+from model.df4tsc.resnet import Classifier_RESNET
 
 
 import data.manipulators as dm
@@ -35,8 +35,17 @@ def trainlm():
 
     return
 
+def p(string, v):
+    """Print if verbose on
 
-def train(model='RandomForestSK', load=False, usesplits=True):
+    Args:
+        string (_type_): _description_
+        v (_type_): _description_
+    """
+    if (v):
+        print(string)
+
+def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False):
     """Train and return specified model.
      PRECONDITIONS:
     - CSV of featurized data in `data/assets`, csv title specified in `model/config.yml` in `trainDataFile` field
@@ -49,10 +58,10 @@ def train(model='RandomForestSK', load=False, usesplits=True):
 
     ## Load necessary configuration from model
     modelconfig = mu.getModelConfig()
-    print(f'Loading features: {modelconfig.features}')
-    print(f'Loading data set: {modelconfig.trainDataFile}')
+    p(f'Loading features: {modelconfig.features}', verbose)
+    p(f'Loading data set: {modelconfig.trainDataFile}', verbose)
     if (modelconfig.goldDataFile.endswith('csv')):
-        print(f'Loading gold set: {modelconfig.goldDataFile}')
+        p(f'Loading gold set: {modelconfig.goldDataFile}', verbose)
         goldData = pd.read_csv(
             Path(__file__).parent / 'data' / 'assets' / modelconfig.goldDataFile,
             parse_dates=['start', 'stop']
@@ -65,64 +74,100 @@ def train(model='RandomForestSK', load=False, usesplits=True):
     df.columns = df.columns.str.lower()
     df = dm.remapLabels(df, 'label', modelconfig.labelCorrectionMap)
     ## Filter then normalize the data
-    print('Filtering and normalizing...')
+    p('Filtering and normalizing...', verbose)
     #count occurrences of infinity in dataframe and mark them for dropping if existent
     numInfs = np.isinf(df.select_dtypes('float').stack()).groupby(level=1).sum().sum()
     if (numInfs > 0):
-        print(f'\tFound {numInfs} entries with value infinity, replacing them with nan.')
+        p(f'\tFound {numInfs} entries with value infinity, replacing them with nan.', verbose)
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
     before = len(df); df = df.dropna(); after = len(df)
-    print(f'\tDropped {before - after} rows with nan values present.')
+    p(f'\tDropped {before - after} rows with nan values present.', verbose)
+    if (model == 'LabelModel'):
+        p('Training labelmodel...', verbose)
+        fitModel = LabelModelCustom()
+        fitModel.fit(df[modelconfig.features])
+        # predictedLabels = fitModel.predict(testData)
+        # predictedProbas = [max(e) for e in fitModel.predict_proba(df)]
+        # p(classification_report(y_true=goldData['label'], y_pred=fitModel.predict(goldData[modelconfig.features])), verbose)
+        return
     
     df_normalized, scaler = dm.computeAndApplyScaler(df, modelconfig.features)
 
     ## Split for testing and evaluation
-    if (usesplits and (not goldData.empty)): # can only avoid using splits if you input gold data set
-        print('Splitting into train and test sets...')
+    if (usesplits): # can only avoid using splits if you input gold data set
+        p('Splitting into train and test sets...', verbose)
         if (goldData.empty):
             train, test = dm.applySplits(df_normalized)
         else:
-            train, testOnLMLabels = dm.applySplits(df_normalized, prespecifiedTestSet=goldData['fin_study_id'].unique())
+            train, test = dm.applySplits(df_normalized, prespecifiedTestSet=goldData['fin_study_id'].unique())
     else:
-        print('Not splitting at all :-)')
+        p('Not splitting at all :-)', verbose)
         train = df_normalized
+    if (not goldData.empty):
         test = dm.filterAndNormalize(goldData, modelconfig.features, preexistingScaler=scaler)
+        if (filterGold):
+            p('Filtering gold values too many standard devs away from training mean...', verbose)
+            minStdDev, maxStdDev = -5, 5
+            before = len(test)
+            for feat in modelconfig.features:
+                test = test[(minStdDev <= test[feat]) & (test[feat] <= maxStdDev)]
+            after = len(test)
+            p(f'In total, dropped {before - after} features from gold set', verbose)
 
     ## Oversample, extract only features (removing identifiers on data)
     shouldOversample = input('Oversample? (y/N): ')
-    if (shouldOversample):
-        print('Oversampling...')
+    if (shouldOversample == 'y'):
+        p('Oversampling...', verbose)
         countsBeforehand = [(subset['label'].iloc[0], len(subset)) for idx, subset in train.groupby('label')]
         train = dm.oversample(train, 'label', 'confidence')
         countsAfterward = [(subset['label'].iloc[0], len(subset)) for idx, subset in train.groupby('label')]
         for i in range(len(countsAfterward)):
-            print(f'\t Class {countsAfterward[i][0]} grew from {countsBeforehand[i][1]:5} to {countsAfterward[i][1]:5} elements')
+            p(f'\t Class {countsAfterward[i][0]} grew from {countsBeforehand[i][1]:5} to {countsAfterward[i][1]:5} elements', verbose)
+    else:
+        p('Skipping oversample.', verbose)
     trainData, trainLabels = train[modelconfig.features], train['label']
     testData, testLabels = test[modelconfig.features], test['label']
     # t2Data, t2Labels = testOnLMLabels[modelconfig.features], testOnLMLabels['label']
 
     ## train the model, return the model, test the model
+    modelname = model
     if (model == 'RandomForestSK'):
-        print('Training randomforest...')
-        fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .1, 'SINUS': .9}, random_state=66)
+        p('Training randomforest...', verbose)
+        model = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .1, 'SINUS': .9}, random_state=66)
         # fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight='balanced', random_state=66)
-        fitModel.fit(trainData, trainLabels)
+        model.fit(trainData, trainLabels)
+    elif (model == 'LogisticRegression'):
+        model = LogisticRegression(random_state = 66)
+        model.fit(trainData, trainLabels)
+        w = model.coef_[0]
+    elif (model == 'ResNet'):
+        model = Classifier_RESNET(
+            Path(__file__).parent / 'model' / 'assets', #outputDir
+            len(modelconfig.features), #inputShape
+            2, #numClasses
+        )
+        model.fit(trainData, trainLabels, None, None, None)
+
+    # print(classification_report(y_true=testLabels, y_pred=model.predict(testData)))
+    modelPredictions = model.predict(testData)
     
-    print(classification_report(y_true=testLabels, y_pred=fitModel.predict(testData)))
-    # probas = fitModel.predict_proba(testData)
-    # probas = [max(e) for e in probas]
-    # disp = PrecisionRecallDisplay.from_predictions(y_true=testLabels, y_pred=probas, pos_label="ATRIAL_FIBRILLATION", name="random forest")
-    # plt.show()
-    disp = PrecisionRecallDisplay.from_estimator(fitModel, testData, testLabels, pos_label="ATRIAL_FIBRILLATION", name="random forest")
-    plt.show()
-    # print(classification_report(y_true=t2Labels, y_pred=fitModel.predict(t2Data)))
+    p('Done', verbose)
+    cacheddata = {
+        'testData': testData,
+        'testLabels': testLabels,
+        'testPredictions': modelPredictions,
+        'trainData': trainData,
+        'trainLabels': trainLabels,
+        'features': modelconfig.features
+    }
+    if (modelname == 'LogisticRegression'):
+        cacheddata['w'] = w
+    return model, cacheddata
 
-    # print(train['fin_study_id'].unique())
-    # print(test['fin_study_id'].unique())
-
-    print('Done')
-
-if __name__=="__main__":
+if __name__ == "__main__":
     # trainlm()
-    train(usesplits=False)
+    # train(model='LabelModel', usesplits=False)
+    # train(usesplits=False)
+    lrModel, cacheddata = train(usesplits=False, model="LogisticRegression", verbose=False)
+    rfModel = train(usesplits=False, model="RandomForestSK", verbose=False)
