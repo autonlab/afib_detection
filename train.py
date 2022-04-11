@@ -5,7 +5,7 @@ from pathlib import Path
 from scipy.stats.mstats import winsorize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from model.df4tsc.resnet import Classifier_RESNET
+#from model.df4tsc.resnet import Classifier_RESNET
 
 
 import data.manipulators as dm
@@ -155,7 +155,6 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
         modelProbabilities = model.predict_proba(testData)
     
     p('Done', verbose)
-    print(goldData[goldData['fin_study_id'] == 1972442])
     cacheddata = {
         'testData': testData,
         'testLabels': testLabels,
