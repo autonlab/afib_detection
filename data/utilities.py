@@ -23,6 +23,7 @@ def getDataConfig():
     return Struct(**configContents)
 
 HR_SERIES = "/data/waveforms/II"
+B2B_SERIES = "/data/numerics/HR.BeatToBeat"
 def getSF(series):
     """Infer sampling frequency from series (TODO: can be more efficient)
 
@@ -103,8 +104,8 @@ def getSlice(file, series, starttime, stoptime):
     eIdx = binary_search_timeseries(stoptime, auf)
     # s = auf[series][sIdx:eIdx]['time']
     # print(s, type(s[0]))
-    samplerate = getSF(auf[series][sIdx:eIdx]['time'])#hp.get_samplerate_mstimer(auf[series][sIdx:eIdx]['time'])
-    # print(samplerate)
+    # samplerate = getSF(auf[series][sIdx:eIdx]['time'])#hp.get_samplerate_mstimer(auf[series][sIdx:eIdx]['time'])
+    samplerate = (eIdx-sIdx) / (stoptime-starttime).total_seconds()
 
     return auf[series][sIdx:eIdx]['value'], samplerate
 
@@ -160,12 +161,15 @@ def isValid(file, start, stop):
     res =  diffLessThanOne(get(sIdx), start) and diffLessThanOne(get(eIdx), stop)
     return res
 
-def getRandomSlice(fin, duration_s, patientSeriesSearchDirectory, seriesOfInterest=HR_SERIES, tryLimit=100):
+def getRandomSlice(fin, duration_s, patientSeriesSearchDirectory, seriesOfInterest=HR_SERIES, tryLimit=50):
     f = findFileByFIN(fin, patientSeriesSearchDirectory)
-    f = aud.File.open(f)
+    try:
+        f = aud.File.open(f)
 
-    fileStartTime = f[seriesOfInterest][0]['time'].item().to_pydatetime()
-    fileEndTime = f[seriesOfInterest][-1]['time'].item().to_pydatetime()
+        fileStartTime = f[seriesOfInterest][0]['time'].item().to_pydatetime()
+        fileEndTime = f[seriesOfInterest][-1]['time'].item().to_pydatetime()
+    except:
+        return None, None
     fileStartTime, fileEndTime = fileStartTime.replace(tzinfo=pytz.UTC), fileEndTime.replace(tzinfo=pytz.UTC)
 
     prospectiveStart = dt.datetime.fromtimestamp(random.randint(int(fileStartTime.timestamp()), int(fileEndTime.timestamp())))
@@ -181,3 +185,19 @@ def getRandomSlice(fin, duration_s, patientSeriesSearchDirectory, seriesOfIntere
     if (count >= tryLimit):
         return None, None
     return prospectiveStart, prospectiveEnd
+
+
+# https://stackoverflow.com/questions/37804279/how-can-we-use-tqdm-in-a-parallel-execution-with-joblib/61027781#61027781
+
+import joblib
+from tqdm.auto import tqdm
+
+class ProgressParallel(joblib.Parallel):
+    def __call__(self, *args, **kwargs):
+        with tqdm() as self._pbar:
+            return joblib.Parallel.__call__(self, *args, **kwargs)
+
+    def print_progress(self):
+        self._pbar.total = self.n_dispatched_tasks
+        self._pbar.n = self.n_completed_tasks
+        self._pbar.refresh()

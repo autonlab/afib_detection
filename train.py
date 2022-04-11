@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-
+from scipy.stats.mstats import winsorize
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from model.df4tsc.resnet import Classifier_RESNET
@@ -17,7 +17,7 @@ def trainlm():
     print(f'Loading features: {modelconfig.features}')
     # print(f'Loading data set: {modelconfig.trainDataFile}')
     df = pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / 'old_featurized_lm_segments.csv',
+        Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
         parse_dates=['start', 'stop'])
     df.columns = df.columns.str.lower()
 
@@ -32,20 +32,15 @@ def trainlm():
         Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
     )
     print('Done.')
-
     return
 
 def p(string, v):
     """Print if verbose on
-
-    Args:
-        string (_type_): _description_
-        v (_type_): _description_
     """
     if (v):
         print(string)
 
-def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False):
+def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False, overwriteTrainset=None, overwriteTestset=None):
     """Train and return specified model.
      PRECONDITIONS:
     - CSV of featurized data in `data/assets`, csv title specified in `model/config.yml` in `trainDataFile` field
@@ -58,18 +53,20 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
 
     ## Load necessary configuration from model
     modelconfig = mu.getModelConfig()
+    trainDataFile = overwriteTrainset if overwriteTrainset else modelconfig.trainDataFile
+    goldDataFile = overwriteTestset if overwriteTestset else modelconfig.goldDataFile
     p(f'Loading features: {modelconfig.features}', verbose)
-    p(f'Loading data set: {modelconfig.trainDataFile}', verbose)
-    if (modelconfig.goldDataFile.endswith('csv')):
-        p(f'Loading gold set: {modelconfig.goldDataFile}', verbose)
+    p(f'Loading data set: {trainDataFile}', verbose)
+    if (goldDataFile.endswith('csv')):
+        p(f'Loading gold set: {goldDataFile}', verbose)
         goldData = pd.read_csv(
-            Path(__file__).parent / 'data' / 'assets' / modelconfig.goldDataFile,
+            Path(__file__).parent / 'data' / 'assets' / goldDataFile,
             parse_dates=['start', 'stop']
         )
         goldData.columns=goldData.columns.str.lower()
         goldData = dm.remapLabels(goldData, 'label', modelconfig.labelCorrectionMap)
     df = pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
+        Path(__file__).parent / 'data' / 'assets' / trainDataFile,
         parse_dates=['start', 'stop'])
     df.columns = df.columns.str.lower()
     df = dm.remapLabels(df, 'label', modelconfig.labelCorrectionMap)
@@ -91,7 +88,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
         # predictedProbas = [max(e) for e in fitModel.predict_proba(df)]
         # p(classification_report(y_true=goldData['label'], y_pred=fitModel.predict(goldData[modelconfig.features])), verbose)
         return
-    
+
     df_normalized, scaler = dm.computeAndApplyScaler(df, modelconfig.features)
 
     ## Split for testing and evaluation
@@ -110,8 +107,11 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
             p('Filtering gold values too many standard devs away from training mean...', verbose)
             minStdDev, maxStdDev = -5, 5
             before = len(test)
+            beforeDF = test.copy()
             for feat in modelconfig.features:
                 test = test[(minStdDev <= test[feat]) & (test[feat] <= maxStdDev)]
+            diff = beforeDF[~beforeDF.index.isin(test.index)]
+            diff.to_csv('removed_segments.csv')
             after = len(test)
             p(f'In total, dropped {before - after} features from gold set', verbose)
 
@@ -151,12 +151,17 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
 
     # print(classification_report(y_true=testLabels, y_pred=model.predict(testData)))
     modelPredictions = model.predict(testData)
+    if (model.predict_proba):
+        modelProbabilities = model.predict_proba(testData)
     
     p('Done', verbose)
+    print(goldData[goldData['fin_study_id'] == 1972442])
     cacheddata = {
         'testData': testData,
         'testLabels': testLabels,
         'testPredictions': modelPredictions,
+        'testPredProbabilities': modelProbabilities if model.predict_proba else None,
+        'testIdentifiers': goldData[goldData.index.isin(test.index)],
         'trainData': trainData,
         'trainLabels': trainLabels,
         'features': modelconfig.features
@@ -166,8 +171,8 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     return model, cacheddata
 
 if __name__ == "__main__":
-    # trainlm()
+    trainlm()
     # train(model='LabelModel', usesplits=False)
     # train(usesplits=False)
-    lrModel, cacheddata = train(usesplits=False, model="LogisticRegression", verbose=False)
-    rfModel = train(usesplits=False, model="RandomForestSK", verbose=False)
+    # lrModel, cacheddata = train(usesplits=False, model="LogisticRegression", verbose=False)
+    # rfModel = train(usesplits=False, model="RandomForestSK", verbose=False)
