@@ -4,9 +4,7 @@ import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 
-
 def loadScaler():
-
     return
 
 def applyScaler(df, featuresToScale, scaler):
@@ -22,14 +20,14 @@ def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
     Args:
         df (_type_): _description_
         featuresToScale (_type_): _description_
-        scalerType (str, optional): Type of scaler to user from sklearn.preprocessing lib. Defaults to "standard".
+        scalerType (str, optional): Type of scaler to use from sklearn.preprocessing lib. Defaults to "standard".
     """
 
     if scalerType=='standard':
         scaler = StandardScaler()
     else:
         raise ValueError(f'scalerType [{scalerType}] unsupported!')
-    
+
     df[featuresToScale] = scaler.fit_transform(df[featuresToScale])
     return df, scaler
 
@@ -77,7 +75,6 @@ def filterAndNormalize(df, features, preexistingScaler=None):
     else:
         df_normalized = computeAndApplyScaler(df, features)
     return df_normalized
-    
 
 def remapLabels(df, labelColumn, labelmap):
     df[labelColumn] = df[labelColumn].map(lambda x: labelmap[x] if x in labelmap else x)

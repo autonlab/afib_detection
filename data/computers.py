@@ -27,15 +27,37 @@ def getSignalFeatures(mvSequence):
         'beat_iqr': iqr(mvSequence)
     }
 
-def featurize(beatSequence, samplerate, featurestokeep):
+def featurize_longertimewindow(dataSlice, samplerate):
     try:
-        w, m = hp.process(beatSequence, samplerate, clean_rr=False)
+        filtered = hp.remove_baseline_wander(dataSlice, samplerate)
+        filtered_scaled = hp.scale_data(filtered)
+        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
         rrIntervals = list()
         beat2beatIntervals = list()
-        for rrIntervalMS in w['RR_list']:
+        for rrIntervalMS in w['RR_list_cor']:
+            beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
+        features = dict()
+        heartpyFeatsToKeep = ['sd1', 'sd2', 'sd1/sd2']
+        for feat in heartpyFeatsToKeep:
+            if (not isinstance(m[feat], float)):
+                features[feat] = None
+            else:
+                features[feat] = m[feat]
+        return features
+    except:
+        return None
+
+def featurize(dataSlice, samplerate):
+    try:
+        filtered = hp.remove_baseline_wander(dataSlice, samplerate)
+        filtered_scaled = hp.scale_data(filtered)
+        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
+        rrIntervals = list()
+        beat2beatIntervals = list()
+        for rrIntervalMS in w['RR_list_cor']:
             beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
         features = getb2bFeatures(beat2beatIntervals)
-        for k, v in getSignalFeatures(beatSequence).items():
+        for k, v in getSignalFeatures(filtered_scaled).items():
             features[k] = v
         heartpyFeatsToKeep = ['bpm', 'pnn20', 'pnn50', 'rmssd', 'ibi', 'sdnn', 'sdsd']
         for feat in heartpyFeatsToKeep:

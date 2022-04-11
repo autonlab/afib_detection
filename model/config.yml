@@ -1,7 +1,10 @@
-rawDataFile: ''
 # trainDataFile: 'featurized_lm_segments.csv'
-trainDataFile: 'trainset_featurized_lm.csv'
-goldDataFile: 'testset_featurized.csv'
+# trainDataFile: 'trainset_featurized_withfilter.csv'
+trainDataFile: 'trainset_10000_featurized_withextras.csv'
+# goldDataFile: 'testset_featurized.csv'
+# goldDataFile: 'testset_featurized_withfilter.csv'
+goldDataFile: 'testset_featurized_withextras.csv'
+# goldDataFile: 'evalset_20211207.csv'
 labelCorrectionMap:
   'OTHER': 'SINUS'
 features:
@@ -9,6 +12,9 @@ features:
   - 'b2b_iqr'
   - 'b2b_range'
   - 'b2b_std'
+  - 'sd1'
+  - 'sd2'
+  - 'sd1/sd2'
   # - 'fft_1'
   # - 'fft_2'
   - 'beat_iqr'
