@@ -2,7 +2,7 @@
 import heartpy as hp
 import numpy as np
 from scipy.stats import variation, iqr
-# from scipy.fft import fft
+from scipy.fft import fft, next_fast_len
 def getb2bFeatures(beat2BeatSequence):
     return {
         'b2b_var': variation(beat2BeatSequence),
@@ -13,18 +13,21 @@ def getb2bFeatures(beat2BeatSequence):
 
 
 def getSignalFeatures(mvSequence):
-    # f = fft(mvSequence)
+    f = fft(mvSequence)
     # n = len(x)
-    # fft1 = np.sum(x * np.exp(-2j * np.pi * 0 * np.arange(n)/n))
-    # fft2 = np.sum(x * np.exp(-2j * np.pi * 1 * np.arange(n)/n))
+    print(np.exp(-2j * np.pi * 0 * np.arange(n)/n))
+    fft1 = np.sum(x * np.exp(-2j * np.pi * 0 * np.arange(n)/n))
+    fft2 = np.sum(x * np.exp(-2j * np.pi * 1 * np.arange(n)/n))
+    print(fft1)
+    print(fft2)
     # print(iqr(mvSequence))
     return {
         # 'fft_1': np.abs(f[0]),
         # 'fft_2': np.abs(f[1]),
-        # 'fft_1': np.abs(fft1),
-        # 'fft_2': np.abs(fft2),
+        'fft_1': np.abs(fft1),
+        'fft_2': np.abs(fft2),
         #'hfd': hfda.measure(mvSequence, len(mvSequence)//2),
-        'beat_iqr': iqr(mvSequence)
+        # 'beat_iqr': iqr(mvSequence)
     }
 
 def featurize_longertimewindow(dataSlice, samplerate):
@@ -36,7 +39,7 @@ def featurize_longertimewindow(dataSlice, samplerate):
         beat2beatIntervals = list()
         for rrIntervalMS in w['RR_list_cor']:
             beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
-        features = dict()
+        features = getSignalFeatures(dataSlice)
         heartpyFeatsToKeep = ['sd1', 'sd2', 'sd1/sd2']
         for feat in heartpyFeatsToKeep:
             if (not isinstance(m[feat], float)):
@@ -57,8 +60,6 @@ def featurize(dataSlice, samplerate):
         for rrIntervalMS in w['RR_list_cor']:
             beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
         features = getb2bFeatures(beat2beatIntervals)
-        for k, v in getSignalFeatures(filtered_scaled).items():
-            features[k] = v
         heartpyFeatsToKeep = ['bpm', 'pnn20', 'pnn50', 'rmssd', 'ibi', 'sdnn', 'sdsd']
         for feat in heartpyFeatsToKeep:
             if (not isinstance(m[feat], float)):

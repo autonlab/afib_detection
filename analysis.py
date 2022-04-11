@@ -76,7 +76,8 @@ def quantifyNoise(df, searchDirectory='/home/rkaufman/workspace/remote'):
         dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
         detrended_scaled = hp.scale_data(hp.remove_baseline_wander(dataslice, samplerate))
         try:
-            return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate, method="zhao2018")
+            # return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate, method="zhao2018")
+            return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate)
         except:
             return 'failed_check'
 
@@ -162,6 +163,11 @@ if __name__ == '__main__':
     #     Path(__file__).parent / 'data' / 'assets' / 'trainset_10000_featurized_withfilter.csv', 
     #     parse_dates=['start', 'stop']))
     # withnoise.to_csv('trainset_10000_featurized_withfilter.csv')
+
+    withnoise = quantifyNoise(pd.read_csv(
+        Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_withextras.csv', 
+        parse_dates=['start', 'stop']))
+    withnoise.to_csv('testset_featurized_withextras.csv')
 
 
     ### ecg quality plotting
