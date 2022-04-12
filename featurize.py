@@ -67,6 +67,7 @@ def featurize():
 
             dataslice, samplerate = datautils.getSlice(file, hr_series, start, stop)
 
+            # print('yo')
             if (len(dataslice) < 15):
                 progress.update(1)
                 continue
@@ -85,9 +86,10 @@ def featurize():
                 featurizedResult['label'].append(label)
                 #featurizedResult['labelmodel_confidence'].append(lm_confidence)
             progress.update(1)
+            # print(featurizedResult)
+            # for k, v in featurizedResult.items():
+            #     print(k, len(v))
     progress.close()
-    for k, v in featurizedResult.items():
-        print(k, len(v))
     result = pd.DataFrame(featurizedResult)
     print(f'Attempting to write result to {dataconfig.featurizedDataOutput}')
     try:
