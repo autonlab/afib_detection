@@ -17,7 +17,6 @@ features:
   - 'sd1/sd2'
   - 'fft_1'
   - 'fft_2'
-  # - 'beat_iqr'
   - 'bpm'
   - 'pnn20'
   - 'rmssd'

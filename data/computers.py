@@ -13,13 +13,15 @@ def getb2bFeatures(beat2BeatSequence):
 
 
 def getSignalFeatures(mvSequence):
-    f = fft(mvSequence)
-    # n = len(x)
-    print(np.exp(-2j * np.pi * 0 * np.arange(n)/n))
-    fft1 = np.sum(x * np.exp(-2j * np.pi * 0 * np.arange(n)/n))
-    fft2 = np.sum(x * np.exp(-2j * np.pi * 1 * np.arange(n)/n))
-    print(fft1)
-    print(fft2)
+    n = len(mvSequence)
+    nn = next_fast_len(n)
+    x = np.pad(np.array(mvSequence), (0, nn-n), 'constant')
+    f = fft(x)
+    #print(-2j * np.pi * 0 * np.arange(n)/n)
+    fft1 = np.sum(x * np.exp(-2j * np.pi * 0 * np.arange(nn)/nn))
+    fft2 = np.sum(x * np.exp(-2j * np.pi * 1 * np.arange(nn)/nn))
+    #print(fft1)
+    #print(fft2)
     # print(iqr(mvSequence))
     return {
         # 'fft_1': np.abs(f[0]),
@@ -34,12 +36,8 @@ def featurize_longertimewindow(dataSlice, samplerate):
     try:
         filtered = hp.remove_baseline_wander(dataSlice, samplerate)
         filtered_scaled = hp.scale_data(filtered)
-        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
-        rrIntervals = list()
-        beat2beatIntervals = list()
-        for rrIntervalMS in w['RR_list_cor']:
-            beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
         features = getSignalFeatures(dataSlice)
+        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
         heartpyFeatsToKeep = ['sd1', 'sd2', 'sd1/sd2']
         for feat in heartpyFeatsToKeep:
             if (not isinstance(m[feat], float)):
