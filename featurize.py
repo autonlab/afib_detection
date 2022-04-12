@@ -32,6 +32,7 @@ def featurize():
     print(f' Searching from {searchDirectory}')
     hr_series = datautils.HR_SERIES
 
+    print(f'Will attempt to write result to {dataconfig.featurizedDataOutput}')
     featurizedResult = {
         'fin_study_id': list(),
         'start': list(),
@@ -73,7 +74,6 @@ def featurize():
             newStart, newStop = start-dt.timedelta(seconds=25), stop+dt.timedelta(seconds=25)
             longerdataslice, samplerate = datautils.getSlice(file, hr_series, newStart, newStop)
             others = dc.featurize_longertimewindow(longerdataslice, samplerate)
-
             if (features and others):
                 for feature in features:
                     featurizedResult[feature].append(features[feature])
@@ -86,7 +86,8 @@ def featurize():
                 #featurizedResult['labelmodel_confidence'].append(lm_confidence)
             progress.update(1)
     progress.close()
-
+    for k, v in featurizedResult.items():
+        print(k, len(v))
     result = pd.DataFrame(featurizedResult)
     print(f'Attempting to write result to {dataconfig.featurizedDataOutput}')
     try:
