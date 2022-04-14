@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 import heartpy as hp
 import matplotlib.pyplot as plt
+import os
 from pprint import PrettyPrinter 
 
 import data.utilities as datautils
@@ -10,6 +11,7 @@ from scipy.stats.mstats import winsorize
 from scipy.stats import kstest
 
 import neurokit2 as nk
+from data.sqis import k_SQI, p_SQI, bas_SQI, orphanidou2015_sqi
 
 def plotDFSegments(df, dst):
     for _, row in df.iterrows():
@@ -70,18 +72,31 @@ def plotSlice(dataSlice, samplerate, fin=None, start=None, extrainfo=None, dst=N
     # plt.clf()
 
 def quantifyNoise(df, searchDirectory='/home/rkaufman/workspace/remote'):
-    def getNoiseReading(row):
+    def getNoiseReading(row, noiseType):
         fin, start, stop = row['fin_study_id'], row['start'], row['stop']
         file = datautils.findFileByFIN(str(fin), searchDirectory)
         dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
-        detrended_scaled = hp.scale_data(hp.remove_baseline_wander(dataslice, samplerate))
+        ecg_cleaned = nk.ecg_clean(dataslice, sampling_rate=samplerate, method='neurokit')
         try:
+            if (noiseType == 'kurtosis'):
+                noiseSQI = k_SQI(ecg_cleaned)
+            elif (noiseType == 'power'):
+                # https://sapienlabs.org/lab-talk/factors-that-impact-power-spectrum-density-estimation/
+                noiseSQI = p_SQI(ecg_cleaned, samplerate, 1)
+            elif (noiseType == 'baseline'):
+                # https://sapienlabs.org/lab-talk/factors-that-impact-power-spectrum-density-estimation/
+                noiseSQI = bas_SQI(ecg_cleaned, samplerate, 1)
+            elif (noiseType == 'templateMatch'):
+                noiseSQI = orphanidou2015_sqi(ecg_cleaned, samplerate)
             # return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate, method="zhao2018")
             return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate)
         except:
             return 'failed_check'
 
-    df['ecg_quality'] = df.apply(getNoiseReading, axis='columns')
+    df['ecg_quality_k'] = df.apply(lambda r: getNoiseReading(r, 'kurtosis'), axis='columns')
+    df['ecg_quality_power'] = df.apply(lambda r: getNoiseReading(r, 'power'), axis='columns')
+    df['ecg_quality_baseline'] = df.apply(lambda r: getNoiseReading(r, 'baseline'), axis='columns')
+    df['ecg_quality_template'] = df.apply(lambda r: getNoiseReading(r, 'templateMatch'), axis='columns')
     return df
 
     
@@ -119,18 +134,22 @@ def compareFeatureSets():
     )
 
 
-
+    out = str()
     for feat in modelconfig.features:
         kst = kstest(trainData[trainData['label'] == 'SINUS'][feat], testData[testData['label'] == 'SINUS'][feat])
         print(f'For {feat}, p-value from kstest: {kst.pvalue}')
-    #     fig, ax = plt.subplots()
-    #     trainFeatures = winsorize(trainData[feat], limits=[.05, .05])
-    #     testFeatures = winsorize(testData[feat], limits=[.05, .05])
-    #     ax.hist(trainFeatures , bins=200, label=f"Train set {feat}", histtype="step", density=True)
-    #     ax.hist(testFeatures , bins=200, label=f"Test set {feat}", histtype="step", density=True)
-    #     plt.legend()
-    #     plt.show()
-        # ax.hist()
+        out += f'{feat},{kst.pvalue}\n'
+        fig, ax = plt.subplots()
+        trainFeatures = winsorize(trainData[feat], limits=[.05, .05])
+        testFeatures = winsorize(testData[feat], limits=[.05, .05])
+        ax.hist(trainFeatures, bins=200, label=f"Train set {feat}", histtype="step", density=True)
+        ax.hist(testFeatures, bins=200, label=f"Eval set {feat}", histtype="step", density=True)
+        plt.legend()
+        plt.savefig(
+            Path(__file__).parent / 'results' / 'assets' / f'{feat.replace(os.sep, "_")}_comparison.svg'
+        )
+        # plt.show()
+    print(out)
 
 def showConfidentlyIncorrects(df, pos_label='ATRIAL_FIBRILLATION', threshold=0.8):
     """Requires df columns:
@@ -154,7 +173,6 @@ def showConfidentlyIncorrects(df, pos_label='ATRIAL_FIBRILLATION', threshold=0.8
 from itertools import cycle
 
 if __name__ == '__main__':
-    pass
     # detectedBeatPlotter(pd.read_csv(
     #     Path(__file__).parent / 'data' / 'assets' / 'sinus_segments_gold.csv', 
     #     parse_dates=['start', 'stop']))
@@ -166,7 +184,8 @@ if __name__ == '__main__':
 
     withnoise = quantifyNoise(pd.read_csv(
         Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_withextras.csv', 
-        parse_dates=['start', 'stop']))
+        parse_dates=['start', 'stop']),
+        searchDirectory='/home/romman/workspace/remote')
     withnoise.to_csv('testset_featurized_withextras.csv')
 
 
@@ -179,4 +198,3 @@ if __name__ == '__main__':
     #     print(dst)
     #     randos = d.sample(n=20)
     #     plotDFSegments(randos, Path(f'/home/rkaufman/workspace/afib_detection/results/assets/{dst}'))
-
