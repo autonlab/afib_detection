@@ -3,9 +3,9 @@
 trainDataFile: 'trainset_10000_featurized.csv'
 # trainDataFile: 'trainset_10000_featurized_withextras.csv'
 # goldDataFile: 'testset_featurized.csv'
-# goldDataFile: 'testset_featurized_withfilter.csv'
-goldDataFile: 'evalset_final.csv'
-# goldDataFile: 'evalset_20211207.csv'
+# goldDataFile: 'testset_featurized_withextras.csv'
+# goldDataFile: 'evalset_featurized_withextras.csv'
+goldDataFile: 'testset_featurized.csv'
 labelCorrectionMap:
   'OTHER': 'SINUS'
   # 'NOISE': 'SINUS'
