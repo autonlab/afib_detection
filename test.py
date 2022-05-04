@@ -16,7 +16,7 @@ if __name__ == "__main__":
     lrModel, cacheddata_testset = train(
         filterGold=False,
         usesplits=True,
-        model="RandomForestSK",
+        model="LogisticRegression",
         verbose=True,
         #overwriteTrainset='trainset_10000_featurized_withextras.csv',
         overwriteTestset='testset_featurized.csv'
@@ -27,7 +27,6 @@ if __name__ == "__main__":
         model="LogisticRegression",
         verbose=True,
         overwriteTrainset='trainset_10000_featurized_withextras.csv',
-<<<<<<< HEAD
         overwriteTestset='testset_final_nonoise.csv'
         )
     cacheddata = cacheddata_testset
@@ -53,15 +52,11 @@ if __name__ == "__main__":
     print(classification_report(y_true=cacheddata['testLabels'],
         y_pred=cacheddata['testPredictions']
         ))
-=======
-        overwriteTestset='testset_featurized_withextras.csv'
-    )
     pd.DataFrame({
         'afib': cacheddata_newtest['testPredProbabilities'][:, 0],
         'sinus': cacheddata_newtest['testPredProbabilities'][:, 1],
         'true_class': cacheddata_newtest['testLabels']
     }).to_csv('lrpredictions.csv', index=False)
->>>>>>> initial roc and plotting
     '''
     lrModel, cacheddata_oldTrainNewTest = train(
         filterGold=True,

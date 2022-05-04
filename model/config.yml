@@ -5,7 +5,11 @@ trainDataFile: 'trainset_10000_featurized.csv'
 # goldDataFile: 'testset_featurized.csv'
 # goldDataFile: 'testset_featurized_withextras.csv'
 # goldDataFile: 'evalset_featurized_withextras.csv'
+<<<<<<< HEAD
 goldDataFile: 'testset_featurized.csv'
+=======
+goldDataFile: 'testset_featurized_withextras.csv'
+>>>>>>> 54c2ac6b265afaaf9ff6dea0c8c3e7882b9880c6
 labelCorrectionMap:
   'OTHER': 'SINUS'
   # 'NOISE': 'SINUS'
