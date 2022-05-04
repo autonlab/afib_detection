@@ -289,8 +289,7 @@ if __name__ == '__main__':
     # withnoise = quantifyNoise(pd.read_csv(
     #     Path(__file__).parent / 'data' / 'assets' / 'trainset_10000_featurized_withfilter.csv',
     #     parse_dates=['start', 'stop']))
-    # withnoise.to_csv('trainset_withfilters')
-    # print('Done trainset')
+    # withnoise.to_csv('trainset_10000_featurized_withfilter.csv')
 
     # withnoise = quantifyNoise(pd.read_csv(
     #     Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_withextras.csv', 

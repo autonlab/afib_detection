@@ -16,7 +16,7 @@ if __name__ == "__main__":
     lrModel, cacheddata_testset = train(
         filterGold=False,
         usesplits=True,
-        model="RandomForestSK",
+        model="LogisticRegression",
         verbose=True,
         #overwriteTrainset='trainset_10000_featurized_withextras.csv',
         overwriteTestset='testset_featurized.csv'
@@ -27,33 +27,6 @@ if __name__ == "__main__":
         model="LogisticRegression",
         verbose=True,
         overwriteTrainset='trainset_10000_featurized_withextras.csv',
-<<<<<<< HEAD
-        overwriteTestset='testset_final_nonoise.csv'
-        )
-    cacheddata = cacheddata_testset
-    dfog = pd.read_csv('./data/assets/filtered_annotations_final.csv', parse_dates=['start', 'stop'])
-    df = cacheddata['testIdentifiers']
-    df['afib_confidence'] = cacheddata['testPredProbabilities'][:,0]
-    df['sinus_confidence'] = cacheddata['testPredProbabilities'][:,1]
-    df['model_prediction'] = cacheddata['testPredictions']
-    df = pd.merge(df, dfog, how='left', left_on=['fin_study_id', 'start', 'stop'], right_on=['fin_study_id', 'start', 'stop'])
-    df.to_csv('testset_withpredictions.csv')
-    print(classification_report(y_true=cacheddata['testLabels'],
-        y_pred=cacheddata['testPredictions']
-        ))
-    cacheddata = cacheddata_evalset
-    dfog = pd.read_csv('./data/assets/evalset_final.csv', parse_dates=['start', 'stop'])
-    df = cacheddata['testIdentifiers']
-    df['afib_confidence'] = cacheddata['testPredProbabilities'][:,0]
-    df['sinus_confidence'] = cacheddata['testPredProbabilities'][:,1]
-    df['model_prediction'] = cacheddata['testPredictions']
-    df = pd.merge(df, dfog, how='left', left_on=['fin_study_id', 'start', 'stop'], right_on=['fin_study_id', 'start', 'stop'])
-    df = df.drop_duplicates(subset=['fin_study_id', 'start', 'stop'])
-    df.to_csv('evalset_withpredictions.csv')
-    print(classification_report(y_true=cacheddata['testLabels'],
-        y_pred=cacheddata['testPredictions']
-        ))
-=======
         overwriteTestset='testset_featurized_withextras.csv'
     )
     pd.DataFrame({
@@ -61,7 +34,6 @@ if __name__ == "__main__":
         'sinus': cacheddata_newtest['testPredProbabilities'][:, 1],
         'true_class': cacheddata_newtest['testLabels']
     }).to_csv('lrpredictions.csv', index=False)
->>>>>>> initial roc and plotting
     '''
     lrModel, cacheddata_oldTrainNewTest = train(
         filterGold=True,
