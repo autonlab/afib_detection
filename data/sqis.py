@@ -7,8 +7,8 @@ import neurokit2 as nk
 
 
 def orphanidou2015_sqi(ecg_window, sampling_rate, show=False):
-    """C. Orphanidou, T. Bonnici, P. Charlton, D. Clifton, D. Vallance and L. Tarassenko, 
-    "Signal quality indices for the electrocardiogram and photoplethysmogram: Derivation and applications to wireless monitoring", 
+    """C. Orphanidou, T. Bonnici, P. Charlton, D. Clifton, D. Vallance and L. Tarassenko,
+    "Signal quality indices for the electrocardiogram and photoplethysmogram: Derivation and applications to wireless monitoring",
     IEEE J. Biomed. Health Informat., vol. 19, no. 3, pp. 832-838, May 2015.
 
     ecg_window = input ECG as a 1d numpy array
@@ -47,11 +47,11 @@ def orphanidou2015_sqi(ecg_window, sampling_rate, show=False):
         return 1
 
     templates = np.array([
-        ecg_window[r_peak-median_qrs_window//2:r_peak+median_qrs_window//2] 
+        ecg_window[r_peak-median_qrs_window//2:r_peak+median_qrs_window//2]
         for r_peak in out['rpeaks']
         if (r_peak-median_qrs_window//2 >= 0) and (r_peak+median_qrs_window//2 < len(ecg_window))
     ])
-    
+
     average_template = np.mean(templates, axis=0)
 
     # scipy.stats.pearsonr returns r, p_value
@@ -110,20 +110,21 @@ def bas_SQI(ecg_cleaned, sampling_rate, window, num_spectrum=[0, 1], dem_spectru
         Length of each window in seconds. See `signal_psd()`.
     """
 
+    psd = nk.signal_power(
+        ecg_cleaned,
+        sampling_rate=sampling_rate,
+        frequency_band=[num_spectrum, dem_spectrum],
+        method="welch",
+        normalize=False,
+        window=window
+        )
+
+    num_power = psd.iloc[0][0]
+    dem_power = psd.iloc[0][1]
+
+    return 1 - num_power / dem_power
     try:
-        psd = nk.signal_power(
-            ecg_cleaned,
-            sampling_rate=sampling_rate,
-            frequency_band=[num_spectrum, dem_spectrum],
-            method="welch",
-            normalize=False,
-            window=window
-            )
-
-        num_power = psd.iloc[0][0]
-        dem_power = psd.iloc[0][1]
-
-        return 1 - num_power / dem_power
+        pass
     except Exception as e:
         return np.nan
 
@@ -154,5 +155,5 @@ def zhao2018_SQI(ecg_cleaned, sampling_rate):
     except Exception as e:
         # print(e)
         return np.nan
-    
-    
+
+

@@ -1,14 +1,18 @@
+import datetime as dt
+import functools
 from pathlib import Path
 import pandas as pd
 import heartpy as hp
 import matplotlib.pyplot as plt
 import os
-from pprint import PrettyPrinter 
+from pprint import PrettyPrinter, pprint
+from tqdm import tqdm
 
 import data.utilities as datautils
 # import utilities as datautils
 from scipy.stats.mstats import winsorize
 from scipy.stats import kstest
+import numpy as np
 
 import neurokit2 as nk
 from data.sqis import k_SQI, p_SQI, bas_SQI, orphanidou2015_sqi
@@ -17,10 +21,13 @@ def plotDFSegments(df, dst):
     for _, row in df.iterrows():
         fin, start, stop = row['fin_study_id'], row['start'], row['stop']
         plotSegment(fin, start, stop, extrainfo=row, dst=dst)
+
 def plotSegment(fin, start, stop, searchDirectory='/home/rkaufman/workspace/remote', extrainfo=None, dst=None):
     file = datautils.findFileByFIN(str(fin), searchDirectory)
     dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
     plotSlice(dataslice, samplerate, fin, start, extrainfo, dst=dst)
+
+
 
 def plotSlice(dataSlice, samplerate, fin=None, start=None, extrainfo=None, dst=None):
     detrended = hp.remove_baseline_wander(dataSlice, samplerate)
@@ -72,37 +79,22 @@ def plotSlice(dataSlice, samplerate, fin=None, start=None, extrainfo=None, dst=N
     # plt.clf()
 
 def quantifyNoise(df, searchDirectory='/home/rkaufman/workspace/remote'):
-    def getNoiseReading(row, noiseType):
+    resk, respower, resbaseline, restemplate = list(), list(), list(), list()
+    for _, row in df.iterrows():
         fin, start, stop = row['fin_study_id'], row['start'], row['stop']
         file = datautils.findFileByFIN(str(fin), searchDirectory)
         dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
         ecg_cleaned = nk.ecg_clean(dataslice, sampling_rate=samplerate, method='neurokit')
-        try:
-            if (noiseType == 'kurtosis'):
-                noiseSQI = k_SQI(ecg_cleaned)
-            elif (noiseType == 'power'):
-                # https://sapienlabs.org/lab-talk/factors-that-impact-power-spectrum-density-estimation/
-                noiseSQI = p_SQI(ecg_cleaned, samplerate, 1)
-            elif (noiseType == 'baseline'):
-                # https://sapienlabs.org/lab-talk/factors-that-impact-power-spectrum-density-estimation/
-                noiseSQI = bas_SQI(ecg_cleaned, samplerate, 1)
-            elif (noiseType == 'templateMatch'):
-                noiseSQI = orphanidou2015_sqi(ecg_cleaned, samplerate)
-            # return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate, method="zhao2018")
-            return nk.ecg_quality(detrended_scaled, sampling_rate=samplerate)
-        except:
-            return 'failed_check'
+        resk.append(k_SQI(ecg_cleaned))
+        respower.append(p_SQI(ecg_cleaned, samplerate, 1))
+        resbaseline.append(bas_SQI(ecg_cleaned, samplerate, 1))
+        restemplate.append(orphanidou2015_sqi(ecg_cleaned, samplerate))
 
-    df['ecg_quality_k'] = df.apply(lambda r: getNoiseReading(r, 'kurtosis'), axis='columns')
-    df['ecg_quality_power'] = df.apply(lambda r: getNoiseReading(r, 'power'), axis='columns')
-    df['ecg_quality_baseline'] = df.apply(lambda r: getNoiseReading(r, 'baseline'), axis='columns')
-    df['ecg_quality_template'] = df.apply(lambda r: getNoiseReading(r, 'templateMatch'), axis='columns')
+    df['ecg_quality_k'] = resk
+    df['ecg_quality_power'] = respower#df.apply(lambda r: getNoiseReading(r, 'power'), axis='columns')
+    df['ecg_quality_baseline'] = resbaseline#df.apply(lambda r: getNoiseReading(r, 'baseline'), axis='columns')
+    df['ecg_quality_template'] = restemplate#df.apply(lambda r: getNoiseReading(r, 'templateMatch'), axis='columns')
     return df
-
-    
-
-
-
 
 def detectedBeatPlotter(df, searchDirectory="/home/rkaufman/workspace/remote", beatDetector="heartpy"):
     """Plot segments showing detected beats
@@ -170,23 +162,87 @@ def showConfidentlyIncorrects(df, pos_label='ATRIAL_FIBRILLATION', threshold=0.8
         if prob > threshold and labels[i] != 'ATRIAL_FIBRILLATION':
             plotSegment(df['fin_study_id'][i], df['start'][i], df['stop'][i], extrainfo=df.iloc[i, :])
 
+def outputRRIntervals(df, dstCsv, winLength_s=120, searchDirectory='/home/rkaufman/workspace/remote'):
+    dfResult = {
+        'fin_study_id': list(),
+        'peak_time': list(),
+        'rr_interval_ms': list(),
+        'is_segment_of_interest': list(),
+        'clinician_label': list(),
+        'clinician_notes': list(),
+        'model_prediction': list()
+    }
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        fin, start, stop = row['fin_study_id'], row['start'], row['stop']
+        file = datautils.findFileByFIN(str(fin), searchDirectory)
+        mid = start + (stop-start)/2
+        newStart, newStop = mid - dt.timedelta(seconds=winLength_s//2), mid+dt.timedelta(seconds=winLength_s//2)
+        dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, newStart, newStop)
+        detrended = hp.remove_baseline_wander(dataslice, samplerate)
+        detrended_scaled = hp.scale_data(detrended)
+        w, m = hp.process(detrended_scaled, samplerate, clean_rr=False)
+        peaks = w['peaklist']
+        correctPeaks = w['binary_peaklist']
+        for i, peakIdx in enumerate(peaks):
+            if (i == len(peaks)-1):
+                continue
+            if (correctPeaks[i] + correctPeaks[i+1] != 2):
+                # print(correctPeaks[i])
+                continue
+            rrIntervalIndices = peaks[i], peaks[i+1]
+            rrInterval = (start + dt.timedelta(seconds=peaks[i]/samplerate), start+dt.timedelta(seconds=peaks[i+1]/samplerate))
+            rrInterval_ms = (rrInterval[1]-rrInterval[0]).total_seconds() * 1000
+            # print(rrInterval_ms)
+            timeElapsedSinceStart_s = peakIdx / samplerate
+            peakTime = newStart + dt.timedelta(seconds=timeElapsedSinceStart_s)
+            dfResult['fin_study_id'].append(fin)
+            dfResult['peak_time'].append(peakTime)
+            dfResult['rr_interval_ms'].append(rrInterval_ms)
+            if (start < peakTime and peakTime < stop):
+                dfResult['is_segment_of_interest'].append(True)
+                dfResult['clinician_label'].append(row['label'])
+                dfResult['model_prediction'].append(row['model_prediction'])
+                dfResult['clinician_notes'].append(row['notes'])
+            else:
+                dfResult['is_segment_of_interest'].append(False)
+                dfResult['clinician_label'].append('N/A')
+                dfResult['model_prediction'].append('N/A')
+                dfResult['clinician_notes'].append('N/A')
+    pd.DataFrame(dfResult).to_csv(dstCsv, index=False)
+
 from itertools import cycle
 
 if __name__ == '__main__':
+    pass
     # detectedBeatPlotter(pd.read_csv(
-    #     Path(__file__).parent / 'data' / 'assets' / 'sinus_segments_gold.csv', 
+    #     Path(__file__).parent / 'data' / 'assets' / 'sinus_segments_gold.csv',
     #     parse_dates=['start', 'stop']))
-    # compareFeatureSets()
-    # withnoise = quantifyNoise(pd.read_csv(
-    #     Path(__file__).parent / 'data' / 'assets' / 'trainset_10000_featurized_withfilter.csv', 
-    #     parse_dates=['start', 'stop']))
-    # withnoise.to_csv('trainset_10000_featurized_withfilter.csv')
+    #compareFeatureSets()
 
-    withnoise = quantifyNoise(pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_withextras.csv', 
-        parse_dates=['start', 'stop']),
-        searchDirectory='/home/romman/workspace/remote')
-    withnoise.to_csv('testset_featurized_withextras.csv')
+    # print('Doin evalset')
+    # withnoise = quantifyNoise(pd.read_csv(
+    #     './evalset_withpredictions.csv',
+    #     parse_dates=['start', 'stop']))
+    # withnoise.to_csv('evalset_withpredictions.csv')
+    # print('Done evalset')
+
+    # print('Doin testset')
+    # withnoise = quantifyNoise(pd.read_csv(
+    #     './testset_withpredictions.csv',
+    #     parse_dates=['start', 'stop']))
+    # withnoise.to_csv('testset_withpredictions.csv')
+    # print('Done testset')
+    # print('Doin trainset')
+    # withnoise = quantifyNoise(pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'trainset_10000_featurized_withfilter.csv',
+    #     parse_dates=['start', 'stop']))
+    # withnoise.to_csv('trainset_withfilters')
+    # print('Done trainset')
+
+    # withnoise = quantifyNoise(pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_withextras.csv',
+    #     parse_dates=['start', 'stop']))
+    # withnoise.to_csv('testset_featurized_withextras.csv')
 
 
     ### ecg quality plotting
@@ -198,3 +254,10 @@ if __name__ == '__main__':
     #     print(dst)
     #     randos = d.sample(n=20)
     #     plotDFSegments(randos, Path(f'/home/rkaufman/workspace/afib_detection/results/assets/{dst}'))
+
+    ### RR-interval csv-saving
+    # df = pd.read_csv('./testset_withpredictions.csv', parse_dates=['start', 'stop'])
+    # confidentlyIncorrects = df[(df['afib_confidence'] > .7) & (df['label'] == 'SINUS')]
+    # confidentCorrects = df[(df['afib_confidence'] > .7) & (df['label'] == 'ATRIAL_FIBRILLATION')]
+    # showRRIntervals(confidentlyIncorrects, 'confidently_incorrectAFIB_withintervals.csv')
+    # showRRIntervals(confidentCorrects, 'confidently_correctAFIB_withintervals.csv')

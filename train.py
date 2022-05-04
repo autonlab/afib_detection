@@ -12,13 +12,14 @@ import data.manipulators as dm
 from model.labelmodel import LabelModelCustom
 import model.utilities as mu
 
-def trainlm():
+def trainlm(trainfile=True):
     modelconfig = mu.getModelConfig()
     print(f'Loading features: {modelconfig.features}')
-    # print(f'Loading data set: {modelconfig.trainDataFile}')
+    print(f'Loading data set: {modelconfig.trainDataFile}')
     df = pd.read_csv(
         Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
         parse_dates=['start', 'stop'])
+
     df.columns = df.columns.str.lower()
 
     fitModel = LabelModelCustom()
@@ -53,6 +54,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
 
     ## Load necessary configuration from model
     modelconfig = mu.getModelConfig()
+    modelconfig.features = [f.lower() for f in modelconfig.features]
     trainDataFile = overwriteTrainset if overwriteTrainset else modelconfig.trainDataFile
     goldDataFile = overwriteTestset if overwriteTestset else modelconfig.goldDataFile
     p(f'Loading features: {modelconfig.features}', verbose)
@@ -64,6 +66,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
             parse_dates=['start', 'stop']
         )
         goldData.columns=goldData.columns.str.lower()
+        print(goldData.columns)
         goldData = dm.remapLabels(goldData, 'label', modelconfig.labelCorrectionMap)
     df = pd.read_csv(
         Path(__file__).parent / 'data' / 'assets' / trainDataFile,
@@ -134,7 +137,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     modelname = model
     if (model == 'RandomForestSK'):
         p('Training randomforest...', verbose)
-        model = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .1, 'SINUS': .9}, random_state=66)
+        model = RandomForestClassifier(max_depth=12, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .15, 'SINUS': .85}, random_state=66)
         # fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight='balanced', random_state=66)
         model.fit(trainData, trainLabels)
     elif (model == 'LogisticRegression'):
@@ -153,7 +156,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     modelPredictions = model.predict(testData)
     if (model.predict_proba):
         modelProbabilities = model.predict_proba(testData)
-    
+
     p('Done', verbose)
     cacheddata = {
         'testData': testData,

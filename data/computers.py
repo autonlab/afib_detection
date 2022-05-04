@@ -20,33 +20,6 @@ def getSignalFeatures(mvSequence):
     x = np.pad(np.array(mvSequence), (0, nn-n), 'constant')
     f = fft(x)
     '''
-Fs = 150                         # sampling rate
-Ts = 1.0/Fs                      # sampling interval
-t = np.arange(0,1,Ts)            # time vector
-ff = 5                           # frequency of the signal
-y = np.sin(2 * np.pi * ff * t)
-
-plt.subplot(2,1,1)
-plt.plot(t,y,'k-')
-plt.xlabel('time')
-plt.ylabel('amplitude')
-
-plt.subplot(2,1,2)
-n = len(y)                       # length of the signal
-k = np.arange(n)
-T = n/Fs
-frq = k/T # two sides frequency range
-freq = frq[range(n/2)]           # one side frequency range
-
-Y = np.fft.fft(y)/n              # fft computing and normalization
-Y = Y[range(n/2)]
-
-plt.plot(freq, abs(Y), 'r-')
-plt.xlabel('freq (Hz)')
-plt.ylabel('|Y(freq)|')
-
-plt.show()      
-    '''
     Fs = 500 # samplearate
     t = np.arange(0, 60, 1.0/Fs)
     plt.subplot(2, 1, 1)
@@ -62,8 +35,9 @@ plt.show()
     plt.plot(freq, abs(Y))
     plt.savefig(
         'yo.png'
-    )   
+    )
     print(1/0)
+    '''
     #print(-2j * np.pi * 0 * np.arange(n)/n)
     fft1 = np.sum(x * np.exp(-2j * np.pi * 0 * np.arange(nn)/nn))
     fft2 = np.sum(x * np.exp(-2j * np.pi * 1 * np.arange(nn)/nn))
@@ -79,10 +53,7 @@ plt.show()
         # 'beat_iqr': iqr(mvSequence)
     }
 
-def featurize_longertimewindow(dataSlice, samplerate):
-    filtered = hp.remove_baseline_wander(dataSlice, samplerate)
-    # filtered_scaled = hp.scale_data(filtered)
-    # features = getSignalFeatures(dataSlice)
+'''
     ecg_cleaned = nk.ecg_clean(filtered, sampling_rate=samplerate)
     sigs, info = nk.ecg_process(ecg_cleaned, sampling_rate=samplerate)
     ecg = sigs['ECG_Clean']
@@ -99,21 +70,38 @@ def featurize_longertimewindow(dataSlice, samplerate):
     ]
     m = hrv
     features = dict()
-    for feat in nkFeatsToKeep:
-        features[feat] = m[feat][0] if isinstance(m[feat][0], float) else None
-        # if (not isinstance(m[feat], float)):
-        #     features[feat] = None
-        # else:
-        #     features[feat] = m[feat]
-    return features
-    # try:
-        # w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
-        # heartpyFeatsToKeep = ['sd1', 'sd2', 'sd1/sd2']
-        # for feat in heartpyFeatsToKeep:
-    # except:
-    #     return None
+
+'''
+def featurize_longertimewindow(dataSlice, samplerate):
+    try:
+        filtered = hp.remove_baseline_wander(dataSlice, samplerate)
+        features = getSignalFeatures(filtered)
+        w, m = hp.process(filtered, samplerate, clean_rr=False)
+        for feat in ['sd1', 'sd2', 'sd1/sd2', 'pnn20', 'pnn50']:
+            features[feat] = m[feat] if isinstance(m[feat], float) else None
+        return features
+    except:
+        return None
 
 def featurize(dataSlice, samplerate):
+    try:
+        detrended = hp.remove_baseline_wander(dataSlice, samplerate)
+        filtered_scaled = hp.scale_data(detrended)
+        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
+        rrIntervals = list()
+        beat2beatIntervals = list()
+        for rrIntervalMS in w['RR_list_cor']:
+            beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
+        heartpyFeatsToKeep = ['bpm', 'rmssd', 'ibi', 'sdnn', 'sdsd']
+        features = getb2bFeatures(beat2beatIntervals)
+        for feat in heartpyFeatsToKeep:
+            features[feat] = m[feat] if isinstance(m[feat], float) else None
+        return features
+    except:
+        return None
+
+
+def featurize_2(dataSlice, samplerate):
     detrended = hp.remove_baseline_wander(dataSlice, samplerate)
     ecg_cleaned = nk.ecg_clean(detrended, sampling_rate=samplerate)
     sigs, info = nk.ecg_process(ecg_cleaned, sampling_rate=samplerate)
@@ -123,7 +111,7 @@ def featurize(dataSlice, samplerate):
     # rrs = nk.utils._hrv_get_rri(peaks, sampling_rate=samplerate, interpolate=False)
     # print(info)
     # print('yo')
-    # print(np.diff(info['ECG_R_Peaks']) / 
+    # print(np.diff(info['ECG_R_Peaks']) /
     # print(hrv)
     # print(sigs)
     # print(np.mean(sigs['ECG_Quality']))

@@ -37,9 +37,15 @@ def featurize():
         'fin_study_id': list(),
         'start': list(),
         'stop': list(),
-        'label': list(),
-        #'labelmodel_confidence': list()
     }
+
+    if ('label' in df.columns):
+        featurizedResult['label'] = list()
+    if ('rhythm_label' in df.columns):
+        featurizedResult['label'] = list()
+    if ('confidence' in df.columns):
+        featurizedResult['labelmodel_confidence'] = list()
+
     for feature in dataconfig.features:
         featurizedResult[feature] = list()
 
@@ -47,7 +53,7 @@ def featurize():
     for fin, group in df.groupby('fin_study_id'):
         file = datautils.findFileByFIN(str(fin), searchDirectory)
         if (not file):
-            # print(f'Could not find fin_study_id: {fin} in {searchDirectory}. Skipping.')
+            print(f'Could not find fin_study_id: {fin} in {searchDirectory}. Skipping.')
             progress.update(len(group))
             continue
 
@@ -58,37 +64,35 @@ def featurize():
         for idx, row in group.iterrows():
 
             start, stop = row['start'], row['stop']
-            label = row['label']
-            # label = '_'.join(row['rhythm_label'].split()).upper()
-            # if (label == 'NOISE'):
-            #     continue
-            # print(row['rhythm_label'], label)
-        #    lm_confidence = row['confidence']
-
+            if ('label' in df.columns):
+                label = row['label']
+            if ('confidence' in df.columns):
+                lm_confidence = row['confidence']
+            if ('rhythm_label' in df.columns):
+                label = '_'.join(row['rhythm_label'].split()).upper()
+            if (label == 'NOISE'): continue
             dataslice, samplerate = datautils.getSlice(file, hr_series, start, stop)
 
-            # print('yo')
             if (len(dataslice) < 15):
                 progress.update(1)
                 continue
-            features = dc.featurize(dataslice, samplerate)
             newStart, newStop = start-dt.timedelta(seconds=25), stop+dt.timedelta(seconds=25)
             longerdataslice, samplerate = datautils.getSlice(file, hr_series, newStart, newStop)
-            others = dc.featurize_longertimewindow(longerdataslice, samplerate)
-            if (features and others):
-                for feature in features:
-                    featurizedResult[feature].append(features[feature])
-                for feature in others:
-                    featurizedResult[feature].append(others[feature])
+
+            shortSegmentFeatures = dc.featurize(dataslice, samplerate)
+            longSegmentFeatures = dc.featurize_longertimewindow(longerdataslice, samplerate)
+            if (shortSegmentFeatures and longSegmentFeatures):
+                for feature in shortSegmentFeatures:
+                    featurizedResult[feature].append(shortSegmentFeatures[feature])
+                for feature in longSegmentFeatures:
+                    featurizedResult[feature].append(longSegmentFeatures[feature])
                 featurizedResult['start'].append(start)
                 featurizedResult['stop'].append(stop)
                 featurizedResult['fin_study_id'].append(fin)
                 featurizedResult['label'].append(label)
-                #featurizedResult['labelmodel_confidence'].append(lm_confidence)
+                if ('confidence' in df.columns):
+                    featurizedResult['labelmodel_confidence'].append(lm_confidence)
             progress.update(1)
-            # print(featurizedResult)
-            # for k, v in featurizedResult.items():
-            #     print(k, len(v))
     progress.close()
     result = pd.DataFrame(featurizedResult)
     print(f'Attempting to write result to {dataconfig.featurizedDataOutput}')
@@ -104,4 +108,9 @@ def featurize():
 if __name__ == '__main__':
     import warnings
     warnings.filterwarnings("ignore")
+    # from pstats import SortKey
+    # import cProfile
+    # featurizeOutput = datautils.getDataConfig().featurizedDataOutput
+    # print(f'Will save profile results to {featurizeOutput}')
+    # cProfile.run("featurize()", Path(__file__).parent / 'results' / 'profiles' / f'featurizeRun_{featurizeOutput}.csv', sort=SortKey.CUMULATIVE)
     featurize()

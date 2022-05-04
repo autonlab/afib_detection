@@ -13,14 +13,45 @@ if __name__ == "__main__":
     # train(model='LabelModel', usesplits=False)
     # train(usesplits=False)
     #lrModel, cacheddata = train(filterGold=True, usesplits=True, model="LogisticRegression", verbose=True)
-    lrModel, cacheddata_newtest = train(
-        filterGold=True,
+    lrModel, cacheddata_testset = train(
+        filterGold=False,
+        usesplits=True,
+        model="RandomForestSK",
+        verbose=True,
+        #overwriteTrainset='trainset_10000_featurized_withextras.csv',
+        overwriteTestset='testset_featurized.csv'
+        )
+    lrModel, cacheddata_evalset = train(
+        filterGold=False,
         usesplits=True,
         model="RandomForestSK",
         verbose=True,
         overwriteTrainset='trainset_10000_featurized_withextras.csv',
-        overwriteTestset='testset_featurized_withextras.csv'
+        overwriteTestset='testset_final_nonoise.csv'
         )
+    cacheddata = cacheddata_testset
+    dfog = pd.read_csv('./data/assets/filtered_annotations_final.csv', parse_dates=['start', 'stop'])
+    df = cacheddata['testIdentifiers']
+    df['afib_confidence'] = cacheddata['testPredProbabilities'][:,0]
+    df['sinus_confidence'] = cacheddata['testPredProbabilities'][:,1]
+    df['model_prediction'] = cacheddata['testPredictions']
+    df = pd.merge(df, dfog, how='left', left_on=['fin_study_id', 'start', 'stop'], right_on=['fin_study_id', 'start', 'stop'])
+    df.to_csv('testset_withpredictions.csv')
+    print(classification_report(y_true=cacheddata['testLabels'],
+        y_pred=cacheddata['testPredictions']
+        ))
+    cacheddata = cacheddata_evalset
+    dfog = pd.read_csv('./data/assets/evalset_final.csv', parse_dates=['start', 'stop'])
+    df = cacheddata['testIdentifiers']
+    df['afib_confidence'] = cacheddata['testPredProbabilities'][:,0]
+    df['sinus_confidence'] = cacheddata['testPredProbabilities'][:,1]
+    df['model_prediction'] = cacheddata['testPredictions']
+    df = pd.merge(df, dfog, how='left', left_on=['fin_study_id', 'start', 'stop'], right_on=['fin_study_id', 'start', 'stop'])
+    df = df.drop_duplicates(subset=['fin_study_id', 'start', 'stop'])
+    df.to_csv('evalset_withpredictions.csv')
+    print(classification_report(y_true=cacheddata['testLabels'],
+        y_pred=cacheddata['testPredictions']
+        ))
     '''
     lrModel, cacheddata_oldTrainNewTest = train(
         filterGold=True,
@@ -49,9 +80,6 @@ if __name__ == "__main__":
         ('Test set oversampled via b2b iqr, old trainset', cacheddata_oldTrainNewTest['testPredProbabilities'][:,0]),
     ]
     '''
-    df = cacheddata_newtest['testIdentifiers']
-    df['label'] = cacheddata_newtest['testLabels']
-    df['probabilities'] = cacheddata_newtest['testPredProbabilities'][:,0]
     #showConfidentlyIncorrects(df)
     '''roc((cacheddata['testLabels'],
         cacheddata_oldTrainOldTest['testLabels'],
@@ -64,9 +92,6 @@ if __name__ == "__main__":
         y_pred=cacheddata_oldTrainOldTest['testPredictions']
         ))
         '''
-    print(classification_report(y_true=cacheddata_newtest['testLabels'],
-        y_pred=cacheddata_newtest['testPredictions']
-        ))
     '''print(classification_report(y_true=cacheddata_newtest['testLabels'],
         y_pred=cacheddata_oldTrainNewTest['testPredictions']
         ))'''
