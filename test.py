@@ -16,11 +16,16 @@ if __name__ == "__main__":
     lrModel, cacheddata_newtest = train(
         filterGold=True,
         usesplits=True,
-        model="RandomForestSK",
+        model="LogisticRegression",
         verbose=True,
         overwriteTrainset='trainset_10000_featurized_withextras.csv',
         overwriteTestset='testset_featurized_withextras.csv'
-        )
+    )
+    pd.DataFrame({
+        'afib': cacheddata_newtest['testPredProbabilities'][:, 0],
+        'sinus': cacheddata_newtest['testPredProbabilities'][:, 1],
+        'true_class': cacheddata_newtest['testLabels']
+    }).to_csv('lrpredictions.csv', index=False)
     '''
     lrModel, cacheddata_oldTrainNewTest = train(
         filterGold=True,

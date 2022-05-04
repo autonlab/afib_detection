@@ -51,7 +51,7 @@ def orphanidou2015_sqi(ecg_window, sampling_rate, show=False):
         for r_peak in out['rpeaks']
         if (r_peak-median_qrs_window//2 >= 0) and (r_peak+median_qrs_window//2 < len(ecg_window))
     ])
-    
+
     average_template = np.mean(templates, axis=0)
 
     # scipy.stats.pearsonr returns r, p_value
