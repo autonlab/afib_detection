@@ -186,7 +186,6 @@ def getRandomSlice(fin, duration_s, patientSeriesSearchDirectory, seriesOfIntere
         return None, None
     return prospectiveStart, prospectiveEnd
 
-
 # https://stackoverflow.com/questions/37804279/how-can-we-use-tqdm-in-a-parallel-execution-with-joblib/61027781#61027781
 
 import joblib
