@@ -3,108 +3,87 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 from sklearn.metrics import PrecisionRecallDisplay, classification_report
-from analysis import plotSegment, showConfidentlyIncorrects
+from analysis import plotSegment, showConfidentlyIncorrects, permutationFeatureImportance
 from data.roc import roc
-
+from itertools import cycle
+import model.utilities as mu
 from train import train
 
 if __name__ == "__main__":
-    # trainlm()
-    # train(model='LabelModel', usesplits=False)
-    # train(usesplits=False)
-    #lrModel, cacheddata = train(filterGold=True, usesplits=True, model="LogisticRegression", verbose=True)
-    lrModel, cacheddata_testset = train(
+    showClassificationReport = True
+    showFeatureImportance = False
+
+    # features = [f.lower() for f in mu.getModelConfig().features]
+    # features = set(features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
+    # features = list(features)
+    # resnet, resnet_data = train(
+    #     filterGold=False,
+    #     usesplits=True,
+    #     model="ResNet",
+    #     verbose=True,
+    #     )
+    lm, lm_data = train(
+        filterGold=False,
+        usesplits=True,
+        model="LabelModel",
+        verbose=True,
+        )
+    rf_sk, rf_sk_data = train(
+        filterGold=False,
+        usesplits=True,
+        model="RandomForestSK",
+        verbose=True,
+        # reduceDimension=True
+        )
+    lr, lr_data = train(
         filterGold=False,
         usesplits=True,
         model="LogisticRegression",
         verbose=True,
-        #overwriteTrainset='trainset_10000_featurized_withextras.csv',
-        overwriteTestset='testset_featurized.csv'
+        # reduceDimension=True
         )
-    lrModel, cacheddata_evalset = train(
-        filterGold=False,
-        usesplits=True,
-        model="LogisticRegression",
-        verbose=True,
-        overwriteTrainset='trainset_10000_featurized_withextras.csv',
-        overwriteTestset='testset_featurized_withextras.csv'
-    )
-    pd.DataFrame({
-        'afib': cacheddata_newtest['testPredProbabilities'][:, 0],
-        'sinus': cacheddata_newtest['testPredProbabilities'][:, 1],
-        'true_class': cacheddata_newtest['testLabels']
-    }).to_csv('lrpredictions.csv', index=False)
+    if (showClassificationReport):
+        # resnet_cr = classification_report(
+        #     y_true=resnet_data['testLabels'], y_pred=resnet_data['testPredictions']
+        #     )
+        lm_cr = classification_report(
+            y_true=lm_data['testLabels'],
+            y_pred=lm_data['testPredictions']
+            )
+        lr_cr = classification_report(
+            y_true=lr_data['testLabels'],
+            y_pred=lr_data['testPredictions']
+            )
+        randForestSK_cr = classification_report(
+            y_true=rf_sk_data['testLabels'],
+            y_pred=rf_sk_data['testPredictions']
+            )
+        print(f'LogisticRegressor classification report:\n{lr_cr}')
+        print(f'RandomForest (sklearn) classification report:\n{randForestSK_cr}')
+        # print(f'ResNet classification report:\n{resnet_cr}')
+        print(f'RandomForest (autonlab) classification report:\n{"... in progress ..."}')
+        print(f'Labelmodel classification report:\n{lm_cr}')
+    if (showFeatureImportance):
+        rf_sk_featureImportance, rfSK_fiSorted = permutationFeatureImportance(rf_sk, rf_sk_data['testData'], rf_sk_data['testLabels'], feature_subset=features, n_repeats=20)
+        lr_featureImportance, lr_fiSorted = permutationFeatureImportance(lr, lr_data['testData'], lr_data['testLabels'], feature_subset=features, n_repeats=20)
+        print('\n\n----- Feature importances -----\n\n')
+        newlinetab = "\n\t"
+        lr_fiSorted = [f'{name}: {importance:.2}' for name, importance in lr_fiSorted]
+        rfSK_fiSorted = [f'{name}: {importance:.2}' for name, importance in rfSK_fiSorted]
+        print(f'LogisticRegressor top features:{newlinetab}{newlinetab.join(lr_fiSorted)}')
+        print(f'RandomForest (sklearn) top features:{newlinetab}{newlinetab.join(rfSK_fiSorted)}')
+        print(f'ResNet top 5 features:\n\t{"... in progress ..."}')
+        print(f'RandomForest (autonlab) top 5 features:{newlinetab}{"... in progress ..."}')
+    yTests = list()
+    yScores = list()
+    titles = cycle(['LogisticRegressor', 'RandomForest (sklearn)', 'LabelModel', 'ResNet'])
+    afibIndex = list(lr.classes_).index('ATRIAL_FIBRILLATION')
+    for cacheddata in [lr_data, rf_sk_data, lm_data]:#resnet_data
+        yTests.append(cacheddata['testLabels'])
+        singleProbs = [prob[afibIndex] for prob in cacheddata['testPredProbabilities']]
+        yScores.append((next(titles),singleProbs))
+    roc(yTests, yScores, 'ROC Comparison')
     '''
-    lrModel, cacheddata_oldTrainNewTest = train(
-        filterGold=True,
-        usesplits=True,
-        model="LogisticRegression",
-        verbose=True,
-        overwriteTrainset='trainset_featurized_withfilter.csv',
-        overwriteTestset='testset_featurized_withfilter.csv'
-        )
-    lrModel, cacheddata_oldTrainOldTest = train(
-        filterGold=True,
-        usesplits=True,
-        model="LogisticRegression",
-        verbose=True,
-        overwriteTrainset='trainset_featurized_withfilter.csv'
-        )
-    '''
-    # lrModel, cacheddata = train(filterGold=True, usesplits=True, model="LogisticRegression", verbose=True)
-    # rfModel, cacheddata2 = train(filterGold=True, usesplits=True, model="RandomForestSK", verbose=True)
-    # print(cacheddata)
-    '''
-    probs = [
-        ('Test set selected by Dr. Rooney', cacheddata['testPredProbabilities'][:,0]),
-        ('Test set selected by Dr. Rooney, oldtrainset', cacheddata_oldTrainOldTest['testPredProbabilities'][:,0]),
-        ('Test set oversampled via b2b iqr', cacheddata_newtest['testPredProbabilities'][:,0]),
-        ('Test set oversampled via b2b iqr, old trainset', cacheddata_oldTrainNewTest['testPredProbabilities'][:,0]),
-    ]
-    '''
-    #showConfidentlyIncorrects(df)
-    '''roc((cacheddata['testLabels'],
-        cacheddata_oldTrainOldTest['testLabels'],
-        cacheddata_newtest['testLabels'],
-        cacheddata_oldTrainNewTest['testLabels']), probs, "Trained on new trainset")
-    print(classification_report(y_true=cacheddata['testLabels'],
-        y_pred=cacheddata['testPredictions']
-        ))
-    print(classification_report(y_true=cacheddata['testLabels'],
-        y_pred=cacheddata_oldTrainOldTest['testPredictions']
-        ))
-        '''
-    '''print(classification_report(y_true=cacheddata_newtest['testLabels'],
-        y_pred=cacheddata_oldTrainNewTest['testPredictions']
-        ))'''
-    models = [
-        ('LogisticRegression', lrModel),
-        ('RandomForest', rfModel)]
-    #print(classification_report(y_true=cacheddata['testLabels'], y_pred=cacheddata['testPredictions']))
-    #print(classification_report(y_true=cacheddata2['testLabels'], y_pred=cacheddata2['testPredictions']))
-    # (clf.predict_proba(X_test)[:,1] >= 0.3).astype(bool)
-    # probs = list()
-    # for i, label in enumerate(cacheddata['testLabels']):
-    #     pred = cacheddata['testPredictions'][i]
-    #     print(cacheddata['testPredProbabilities'][i], cacheddata['testPredictions'][i])
-    #     if pred != 'ATRIAL_FIBRILLATION':
-    #         prob = min(cacheddata['testPredProbabilities'][i])
-    #         # prob = 1 - prob
-    #     else:
-    #         prob = max(cacheddata['testPredProbabilities'][i])
-    #     probs.append(prob)
-
-    # plt.hist(goldLabelsAndProbabilities[goldLabelsAndProbabilities['label'] == 'ATRIAL_FIBRILLATION']['probas'], alpha=.8, histtype='step', label='AFib', bins=15)
-    # plt.hist(goldLabelsAndProbabilities[goldLabelsAndProbabilities['label'] != 'ATRIAL_FIBRILLATION']['probas'], alpha=.8, histtype='step', label='Not AFib', bins=20)
-    # plt.xlabel('Model probability of AFib')
-    # plt.ylabel('Quantity of data points')
-    # plt.legend()
-    # plt.savefig(
-    #     Path(__file__).parent / 'results' / 'assets' / f'probaPlots.png'
-    # )
-    # plt.clf()
-    # print(1/0)
-
     for modelName, model in models:
         # fpr, tpr = dict(), dict()
         # roc_auc = dict()
@@ -143,3 +122,5 @@ if __name__ == "__main__":
             Path(__file__).parent / 'results' / 'assets' / f'{feature}Histogram.png'
         )
         plt.clf()
+
+    '''

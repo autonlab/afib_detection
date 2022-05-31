@@ -1,14 +1,16 @@
-
+from joblib import Memory
 import numpy as np
+import os
 import pandas as pd
 from pathlib import Path
 from scipy.stats.mstats import winsorize
+import sklearn
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-#from model.df4tsc.resnet import Classifier_RESNET
-
+from model.df4tsc.resnet import Classifier_RESNET
 
 import data.manipulators as dm
+import data.utilities as du
 from model.labelmodel import LabelModelCustom
 import model.utilities as mu
 
@@ -41,7 +43,7 @@ def p(string, v):
     if (v):
         print(string)
 
-def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False, overwriteTrainset=None, overwriteTestset=None):
+def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False, overwriteTrainset=None, overwriteTestset=None, reduceDimension=False):
     """Train and return specified model.
      PRECONDITIONS:
     - CSV of featurized data in `data/assets`, csv title specified in `model/config.yml` in `trainDataFile` field
@@ -52,9 +54,17 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     """
     goldData = pd.DataFrame()
 
+    dataConfig = du.getDataConfig()
+    mem = Memory(dataConfig.cacheDirectory)
+
     ## Load necessary configuration from model
     modelconfig = mu.getModelConfig()
     modelconfig.features = [f.lower() for f in modelconfig.features]
+    if (reduceDimension):
+        modelconfig.features = set(modelconfig.features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
+        modelconfig.features = list(modelconfig.features)
+        print(f'Features after reduction: {modelconfig.features}')
+
     trainDataFile = overwriteTrainset if overwriteTrainset else modelconfig.trainDataFile
     goldDataFile = overwriteTestset if overwriteTestset else modelconfig.goldDataFile
     p(f'Loading features: {modelconfig.features}', verbose)
@@ -66,31 +76,24 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
             parse_dates=['start', 'stop']
         )
         goldData.columns=goldData.columns.str.lower()
-        print(goldData.columns)
-        goldData = dm.remapLabels(goldData, 'label', modelconfig.labelCorrectionMap)
+        if (modelconfig.labelCorrectionMap):
+            goldData = dm.remapLabels(goldData, 'label', modelconfig.labelCorrectionMap)
     df = pd.read_csv(
         Path(__file__).parent / 'data' / 'assets' / trainDataFile,
         parse_dates=['start', 'stop'])
     df.columns = df.columns.str.lower()
-    df = dm.remapLabels(df, 'label', modelconfig.labelCorrectionMap)
+    if (modelconfig.labelCorrectionMap):
+        df = dm.remapLabels(df, 'label', modelconfig.labelCorrectionMap)
     ## Filter then normalize the data
     p('Filtering and normalizing...', verbose)
     #count occurrences of infinity in dataframe and mark them for dropping if existent
     numInfs = np.isinf(df.select_dtypes('float').stack()).groupby(level=1).sum().sum()
     if (numInfs > 0):
-        p(f'\tFound {numInfs} entries with value infinity, replacing them with nan.', verbose)
+        p(f'\tFound {numInfs} entries with value infinity, replacing them with nan', verbose)
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
     before = len(df); df = df.dropna(); after = len(df)
     p(f'\tDropped {before - after} rows with nan values present.', verbose)
-    if (model == 'LabelModel'):
-        p('Training labelmodel...', verbose)
-        fitModel = LabelModelCustom()
-        fitModel.fit(df[modelconfig.features])
-        # predictedLabels = fitModel.predict(testData)
-        # predictedProbas = [max(e) for e in fitModel.predict_proba(df)]
-        # p(classification_report(y_true=goldData['label'], y_pred=fitModel.predict(goldData[modelconfig.features])), verbose)
-        return
 
     df_normalized, scaler = dm.computeAndApplyScaler(df, modelconfig.features)
 
@@ -140,29 +143,78 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
         model = RandomForestClassifier(max_depth=12, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .15, 'SINUS': .85}, random_state=66)
         # fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight='balanced', random_state=66)
         model.fit(trainData, trainLabels)
+        modelPredictions = model.predict(testData)
+        modelProbabilities = model.predict_proba(testData)
+    elif (model == 'LabelModel'):
+        fitModel = LabelModelCustom()
+        fitModel.fit(trainData)
+        modelPredictions = fitModel.predict(testData)
+        # modelProbabilities = [max(e) for e in fitModel.predict_proba(testData)]
+        modelProbabilities = fitModel.predict_proba(testData)
+        res = list()
+        for modelPred in modelPredictions:
+            if modelPred == 'OTHER':
+                res.append('SINUS')
+            else:
+                res.append(modelPred)
+        modelPredictions = res
+
     elif (model == 'LogisticRegression'):
         model = LogisticRegression(random_state = 66)
         model.fit(trainData, trainLabels)
+        modelPredictions = model.predict(testData)
+        modelProbabilities = model.predict_proba(testData)
         w = model.coef_[0]
     elif (model == 'ResNet'):
-        model = Classifier_RESNET(
-            Path(__file__).parent / 'model' / 'assets', #outputDir
-            len(modelconfig.features), #inputShape
-            2, #numClasses
-        )
-        model.fit(trainData, trainLabels, None, None, None)
+        # create input shape from num features
+        packForNN = mem.cache(dm.packForNN)
 
-    # print(classification_report(y_true=testLabels, y_pred=model.predict(testData)))
-    modelPredictions = model.predict(testData)
-    if (model.predict_proba):
-        modelProbabilities = model.predict_proba(testData)
+        x_train = trainData.to_numpy()
+        x_train, indices = packForNN(x_train, train)
+        x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
+        y_train = trainLabels.to_numpy().reshape((-1, 1))
+        y_train = y_train[indices]
+        # from keras.models import load_model
+        # model = load_model(
+        #     str(Path(__file__).parent / 'model' / 'assets') + os.sep + 'best_model.hdf5'
+        # )
+        model = Classifier_RESNET(
+            str(Path(__file__).parent / 'model' / 'assets') + os.sep, #outputDir
+            x_train.shape[1:], #inputShape
+            2, #numClasses
+            verbose=True
+        )
+        x_test = testData.to_numpy()
+        x_test, indices = packForNN(x_test, test)
+        x_test = x_test.reshape((x_test.shape[0], x_test.shape[1], 1))
+        y_test = testLabels.to_numpy().reshape((-1, 1))
+        y_test = y_test[indices]
+        # enc = sklearn.preprocessing.OneHotEncoder(categories=['ATRIAL_FIBRILLATION', 'SINUS'])
+        enc = sklearn.preprocessing.OneHotEncoder(categories='auto')
+        # enc = sklearn.preprocessing.OneHotEncoder(categories=['ATRIAL_FIBRILLATION', 'SINUS', 'OTHER'])
+        enc.fit(y_train.reshape(-1, 1))
+        y_train = enc.transform(y_train.reshape(-1, 1)).toarray()
+        model = model.fit(x_train, y_train, None, None, None)
+
+        modelProbabilities = model.predict(x_test)
+        modelPredictions = [['ATRIAL_FIBRILLATION', 'SINUS', 'OTHER'][np.argmax(a)] for a in modelProbabilities]
+        # print(modelPredictions)
+        # modelPredictions = enc.inverse_transform(modelProbabilities)
+        newModelPredictions = list()
+        for pred in modelPredictions:
+            if pred in modelconfig.labelCorrectionMap.keys():
+                newModelPredictions.append(modelconfig.labelCorrectionMap[pred])
+            else:
+                newModelPredictions.append(pred)
+        modelPredictions = newModelPredictions
+        testLabels = testLabels.to_numpy()[indices]
 
     p('Done', verbose)
     cacheddata = {
         'testData': testData,
         'testLabels': testLabels,
         'testPredictions': modelPredictions,
-        'testPredProbabilities': modelProbabilities if model.predict_proba else None,
+        'testPredProbabilities': modelProbabilities,# if model.predict_proba else None,
         'testIdentifiers': goldData[goldData.index.isin(test.index)],
         'trainData': trainData,
         'trainLabels': trainLabels,
