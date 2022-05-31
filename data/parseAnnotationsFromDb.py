@@ -36,20 +36,13 @@ def filterDF(df):
     shared = pd.read_csv('./assets/stratified_gold_shared2.csv')
     rest = pd.read_csv('./assets/stratified_gold_rest2.csv')
     all = pd.concat([shared, rest])
-    print(df['fin_study_id'].head())
-    print(all['fin_study_id'].head())
     df = df[df['fin_study_id'].astype(np.int64).isin(all['fin_study_id'])]
-    print(len(df))
     df['isduplicate'] = df.duplicated(subset=['fin_study_id', 'start'], keep=False)
-    print(len(df))
-    # df['annotation_category'] = ['shared' if int(row['fin_study_id']) in shared['fin_study_id'] else 'individual' for _, row in df.iterrows()]
-    #df['annotation_category'] = df['fin_study_id'].apply(lambda x: int(x) in set(all['fin_study_id']))#
     return df
 
 
 
 if __name__ == '__main__':
     parsed = parseAndAddAnnotationsToDf('./assets/annotations_recent.csv')
-    print(parsed.head())
     parsed = filterDF(parsed)
     parsed.to_csv('./filtered_annotations_2022-04-12.csv')

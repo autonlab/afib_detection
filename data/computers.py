@@ -1,10 +1,17 @@
 
 import heartpy as hp
+import hfda
 import numpy as np
 from scipy.stats import variation, iqr
 from scipy.fft import fft, next_fast_len
 import matplotlib.pyplot as plt
 import neurokit2 as nk
+import pandas as pd
+from pyclustertend import hopkins
+from sklearn.metrics import silhouette_score
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
 def getb2bFeatures(beat2BeatSequence):
     return {
         'b2b_var': variation(beat2BeatSequence),
@@ -75,22 +82,74 @@ def getSignalFeatures(mvSequence):
 def featurize_longertimewindow(dataSlice, samplerate):
     try:
         filtered = hp.remove_baseline_wander(dataSlice, samplerate)
-        features = getSignalFeatures(filtered)
+        filtered_scaled = hp.scale_data(filtered)
         w, m = hp.process(filtered, samplerate, clean_rr=False)
+        features = getRRIntervalStatistics(w['RR_list'])#getSignalFeatures(filtered)
         for feat in ['sd1', 'sd2', 'sd1/sd2', 'pnn20', 'pnn50']:
             features[feat] = m[feat] if isinstance(m[feat], float) else None
+        hfd = hfda.measure(w['RR_list'], 5) #https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6110872/
+        features['hfd'] = hfd if isinstance(hfd, float) else None
+        sampEn, _ = nk.entropy_sample(np.array(w['RR_list']), dimension=1)
+        features['sample_entropy'] = sampEn
+        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
+        peaks, peakinfo = nk.ecg_peaks(sigs['ECG_Clean'], sampling_rate=samplerate)
+        hrv_indices = nk.hrv_frequency(peaks, sampling_rate=samplerate, show=False)
+        m = hrv_indices
+        for feat in ['HRV_LF', 'HRV_HF', 'HRV_LFHF']:
+            features[feat] = m[feat][0] if isinstance(m[feat][0], float) else None
         return features
     except:
         return None
+
+def getRRIntervalStatistics(rrIntervals):
+    #first, make rr, rr_{n+1} pairs
+    rrIntervalPairs = list(zip(rrIntervals[:-1], rrIntervals[1:]))
+    scaledDF = StandardScaler().fit_transform(pd.DataFrame(rrIntervalPairs))
+    hopkinsStat = hopkins(scaledDF, len(rrIntervalPairs))
+    kMeanses = [KMeans(n_clusters=i, max_iter=300, random_state=16) for i in range(1, 11)]
+    [kMeans.fit(scaledDF) for kMeans in kMeanses]
+    maxSilScore = maxSilhouetteScore(scaledDF, kMeanses[1:]) #only pass clusters 2 through 10 to sil score
+    sse_1 = kMeanses[0].inertia_
+    sse_2 = kMeanses[1].inertia_
+    return {
+        'hopkins_statistic': hopkinsStat,
+        'max_sil_score': maxSilScore,
+        'sse_1_clusters': sse_1,
+        'sse_2_clusters': sse_2
+    }
+
+#implemented by Dr. Rooney
+def maxSilhouetteScore(rrIntervalPairs, kMeanses):
+    maxSilScore = -2 #silhouette score ranges between -1 and 1
+    for cluster in kMeanses:
+        score = silhouette_score(rrIntervalPairs, cluster.labels_)
+        maxSilScore = max(score, maxSilScore)
+    return maxSilScore
+
+def hopkinsStatistic(X):
+    #X=X.values
+    sample_size = int(X.shape[0]*0.05)
+    X_uniform_random_sample = uniform(X.min(axis=0), X.max(axis=0) ,(sample_size , X.shape[1]))
+    random_indices=sample(range(0, X.shape[0], 1), sample_size)
+    X_sample = X[random_indices]
+    neigh = NearestNeighbors(n_neighbors=2)
+    nbrs=neigh.fit(X)
+    u_distances , u_indices = nbrs.kneighbors(X_uniform_random_sample , n_neighbors=2)
+    u_distances = u_distances[: , 0] #distance to the first (nearest) neighbour
+    w_distances , w_indices = nbrs.kneighbors(X_sample , n_neighbors=2)
+    w_distances = w_distances[: , 1]
+    u_sum = np.sum(u_distances)
+    w_sum = np.sum(w_distances)
+    H = u_sum/ (u_sum + w_sum)
+    return H
 
 def featurize(dataSlice, samplerate):
     try:
         detrended = hp.remove_baseline_wander(dataSlice, samplerate)
         filtered_scaled = hp.scale_data(detrended)
         w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
-        rrIntervals = list()
         beat2beatIntervals = list()
-        for rrIntervalMS in w['RR_list_cor']:
+        for rrIntervalMS in w['RR_list']:
             beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
         heartpyFeatsToKeep = ['bpm', 'rmssd', 'ibi', 'sdnn', 'sdsd']
         features = getb2bFeatures(beat2beatIntervals)

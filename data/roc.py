@@ -31,7 +31,6 @@ def roc(y_test, y_score, title, posLabel="ATRIAL_FIBRILLATION"):
                 label=f'{scoreDescriptor} (auc = {rocauc:.2})'
             )
 
-
     plt.plot([0, 1], [0, 1], color="navy", lw=lw, linestyle="--")
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
@@ -299,7 +298,6 @@ def three_roc_plot(title='ROC Curves', op='', predictionsOutput=None, model="rf.
     else:
         os.system(f'sed -i "1s/.*/A0,A1,true_output/" {op}predictions.csv')
 
-        
         # ! ./random_forest option roc ds {op}predictions.csv
         # ! python ../afib_detection/2class_process_roc_stds.py A1_roc
         # ! python ../afib_detection/2class_process_roc_stds.py A2_roc

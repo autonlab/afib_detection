@@ -92,11 +92,14 @@ def binary_search_timeseries(searchtime, auf, lo=0):
 #     lm_predictions = lm.predict_proba(L=L_train)
 #     predsByFilename = dict()
 #     numbersToLabels = lfMod.number_to_label_map()
+def getSliceFIN(fin, series, starttime, stoptime, searchDir):
+    file = findFileByFIN(str(fin), searchDir)
+    dataslice, samplerate = getSlice(file, series, starttime, stoptime)
+    return dataslice, samplerate
 
 def getSlice(file, series, starttime, stoptime):
     auf = aud.File.open(file)
     basetime = auf[series][0]['time'].item().to_pydatetime()
-    length = auf[series].nrow
     basetime = basetime.replace(tzinfo=pytz.UTC)
     starttime, stoptime = starttime.replace(tzinfo=pytz.UTC), stoptime.replace(tzinfo=pytz.UTC)
 
