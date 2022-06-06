@@ -10,6 +10,7 @@ from tqdm import tqdm
 from typing import List, Union
 
 import data.utilities as datautils
+from data.computers import featurize
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import roc_auc_score, make_scorer
@@ -27,21 +28,61 @@ def plotDFSegments(df, dst):
         plotSegment(fin, start, stop, extrainfo=row, dst=dst)
 
 def plotSegment(fin, start, stop, searchDirectory='/home/rkaufman/workspace/remote', extrainfo=None, dst=None):
-    file = datautils.findFileByFIN(str(fin), searchDirectory)
+    file = datautils.findFileByFIN(str(int(fin)), searchDirectory)
     dataslice, samplerate = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
-    plotSlice(dataslice, samplerate, searchDirectory, fin, start, extrainfo, dst=dst)
+    plotSlice_butterworthFiltered(dataslice, samplerate, searchDirectory, fin, start, extrainfo, dst=dst)
 
 def plotSlice_butterworthFiltered(dataSlice, samplerate, searchDir, fin=None, start=None, extrainfo=None, dst=None):
-    sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
-    ecg = sigs['ECG_Clean']
-    filteredSlice = nk.signal_filter(dataSlice, sampling_rate=samplerate, order=3, lowcut=.5, highcut=40)
+    ecg = dataSlice
+    text = ''
     w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
     hp.plotter(w, m, figsize=(12, 4), show=False)
+    for feat in ['b2b_iqr', 'b2b_var', 'b2b_std']:
+        text += f'{feat}: {extrainfo[feat]}\n'
+    plt.figtext(.1, .75, text, ha="left",
+        bbox = {'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
     if (dst):
         plt.savefig(
-            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_2.png'
+            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_hp.svg'
         )
 
+    plt.clf()
+    sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
+    ecg = sigs['ECG_Clean']
+    feats = featurize(ecg, samplerate)
+    w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
+    hp.plotter(w, m, figsize=(12, 4), show=False)
+    text = ''
+    for feat in ['b2b_iqr', 'b2b_var', 'b2b_std']:
+        text += f'{feat}: {feats[feat]}\n'
+    plt.figtext(.1, .75, text, ha="left",
+        bbox = {'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
+    if (dst):
+        plt.savefig(
+            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_nk.svg'
+        )
+
+    plt.clf()
+
+def cdfForFeature(df, feat, cutoff=None):
+    if (False):# feat == 'b2b_std' or feat == 'b2b_var'):
+        limits = [0, .18]
+    else:
+        limits = [0, .05]
+    series = winsorize(df[feat], limits=limits)
+    print(f"{feat}: min: {min(series):.2} | max: {max(series):.2}")
+    plt.hist(series,
+        cumulative=True,
+        density=True,
+        bins=50,
+        label=f'CDF for {feat}',
+        histtype='step')
+    if (cutoff):
+        plt.axvline(cutoff, color='k', linestyle='dashed')
+    plt.title(label=feat + ' CDF') 
+    plt.savefig(
+        f'./results/assets/cdfs/{feat}_cdf_nk.png'
+    )
     plt.clf()
 
 def plotSlice_morphology(dataSlice, samplerate, searchDir, fin=None, start=None, extrainfo=None, dst=None):
@@ -235,11 +276,14 @@ def compareFeatureSets(df1Path, df2Path, dst=Path('results/assets')):
         Path(__file__).parent / 'data' / 'assets' / df2Path
     )
     # trainData, testData = pd.read_csv('./evalset_withpredictions.csv'), pd.read_csv('./testset_withpredictions')
+    trainData.columns = trainData.columns.str.lower()
+    testData.columns = testData.columns.str.lower()
 
 
     out = str()
     newfeats = ['ecg_quality_k', 'ecg_quality_power', 'ecg_quality_template']
-    for feat in modelconfig.features:#modelconfig.features:
+    for feat in modelconfig.features:
+        feat = feat.lower()
         kst = kstest(trainData[feat], testData[feat])
         print(f'For {feat}, p-value from kstest: {kst.pvalue}')
         out += f'{feat},{kst.pvalue}\n'
@@ -249,13 +293,10 @@ def compareFeatureSets(df1Path, df2Path, dst=Path('results/assets')):
         ax.hist(trainFeatures, bins=200, label=f"{df1Path.split('.')[0]} {feat}", histtype="step", density=True)
         ax.hist(testFeatures, bins=200, label=f"{df2Path.split('.')[0]} {feat}", histtype="step", density=True)
         plt.legend()
-        # plt.savefig(
-        #     Path(__file__).parent / 'results' / 'assets' / f'{feat.replace(os.sep, "_")}_comparison.svg'
-        # )
         plt.savefig(
             Path(dst) / f'{feat.replace(os.sep, "_")}_comparison.svg'
         )
-        # plt.show()
+        plt.clf()
     print(out)
 
 def showConfidentlyIncorrects(df, pos_label='ATRIAL_FIBRILLATION', threshold=0.8):
@@ -385,31 +426,71 @@ def compareFeatures_plot(dfs: List[pd.DataFrame], features: List[str], dfTitles:
         )
         altview.display(c)
         input('y')
-    
-
+from train import trainlm 
+def lmHeuristicImportances():
+    heuristics  = [
+        'variation_afib',
+        'variation_other',
+        'variation_sinus',
+        'iqr_afib',
+        'iqr_other',
+        'iqr_sinus',
+        'range_afib',
+        'range_other',
+        'range_sinus',
+        'std_afib',
+        'std_other',
+        'std_sinus',
+        'pnn20_afib',
+        'pnn20_other',
+        'pnn20_sinus',
+        #'pnn50_afib',
+        'pnn50_other',
+        'pnn50_sinus',
+        'rmssd_afib',
+        'rmssd_other',
+        'rmssd_sinus',
+        'sdnn_afib',
+        'sdnn_other',
+        'sdnn_sinus',
+        'hopkins_sinus',
+        'hopkins_other',
+        'sil_coef_sinus',
+        'sil_coef_other',
+        'sse_afib_other',
+        'sse_afib_sinus',
+        'sse_diff_afib',
+    ]
+    labelmodel = trainlm(modifyLabels=False)
+    # lfAnalysis = labelmodel.getAnalysis()
+    # summary = lfAnalysis.lf_summary()
+    heuristicWeights = labelmodel.lm.get_weights()
+    heuristicWeights = zip(heuristics, heuristicWeights)
+    heuristicWeights = sorted(heuristicWeights, reverse=True, key=lambda x: x[1])
+    print('\n'.join([f'{h}: {w:.2}' for h, w in heuristicWeights]))
 
 
 
 from itertools import cycle
 
 if __name__ == '__main__':
-    df_trainset = pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / 'trainset_featurized.csv',
-        parse_dates=['start', 'stop']
-        )
-    df_evalset = pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / 'evalset_featurized.csv',
-        parse_dates=['start', 'stop']
-        )
-    df_testset = pd.read_csv(
-        Path(__file__).parent / 'data' / 'assets' / 'testset_featurized.csv',
-        parse_dates=['start', 'stop']
-        )
-    compareFeatures_plot(
-        [df_trainset, df_evalset, df_testset],
-        ['sse_1_clusters', 'pnn20'],
-        ['trainset', 'evalset', 'testset']
-    )
+    # df_trainset = pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'trainset_featurized.csv',
+    #     parse_dates=['start', 'stop']
+    #     )
+    # df_evalset = pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'evalset_featurized.csv',
+    #     parse_dates=['start', 'stop']
+    #     )
+    # df_testset = pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'testset_featurized.csv',
+    #     parse_dates=['start', 'stop']
+    #     )
+    # compareFeatures_plot(
+    #     [df_trainset, df_evalset, df_testset],
+    #     ['sse_1_clusters', 'pnn20'],
+    #     ['trainset', 'evalset', 'testset']
+    # )
     # detectedBeatPlotter(pd.read_csv(
     #     Path(__file__).parent / 'data' / 'assets' / 'sinus_segments_gold.csv',
     #     parse_dates=['start', 'stop']))
@@ -426,7 +507,8 @@ if __name__ == '__main__':
     # withnoise = quantifyNoise(pd.read_csv(
     #     './testset_withpredictions.csv',
     #     parse_dates=['start', 'stop']))
-    # compareFeatureSets('trainset_10000_featurized_withextras.csv', 'testset_featurized_withextras.csv', dst='./results/assets/train_vs_test')
+    compareFeatureSets('trainset_featurized.csv', 'evalset_featurized.csv', dst='./results/assets/train_vs_eval')
+    compareFeatureSets('trainset_featurized.csv', 'testset_featurized.csv', dst='./results/assets/train_vs_test')
     # compareFeatureSets('evalset_final_cleaned.csv','testset_featurized_withextras.csv',dst='./results/assets/eval_vs_test')
     # compareFeatureSets('trainset_10000_featurized_withextras.csv', 'evalset_final_cleaned.csv', dst='./results/assets/train_vs_eval')
     # withnoise = quantifyNoise(pd.read_csv(
@@ -455,7 +537,23 @@ if __name__ == '__main__':
     #     randos = d#.sample(n=20)
     #     plotDFSegments(randos, Path(f'/home/rkaufman/workspace/afib_detection/results/assets/'))
 
+    # df = pd.read_csv('./data/assets/trainset_featurized.csv', parse_dates=['start', 'stop'])
+    # df_insane = df[df['b2b_iqr'] > 30]
+    # print(len(df_insane))
+    # df_insane = df_insane.sample(10)
     # plotDFSegments(
-    #     pd.read_csv('./data/assets/evalset_featurized.csv', parse_dates=['start', 'stop']),
-    #     Path('/home/rkaufman/workspace/afib_detection/results/assets/evalset_plots')
+    #     df_insane,
+    #     Path('/home/rkaufman/workspace/afib_detection/results/assets/insane_feature_analysis_nk')
     # )
+    # lmHeuristicImportances()
+    # featsAndCutoffs = [
+    #     ('b2b_std', 5),
+    #     ('b2b_var', .05),
+    #     ('b2b_iqr', 6),
+    #     ('pnn20', .80),
+    #     ('pnn50', .55)
+    # ]
+    # df = pd.read_csv('./data/assets/5000_segments_featurized.csv')
+    # # df = pd.read_csv('./data/assets/trainset_featurized.csv')
+    # for feat, cutoff in featsAndCutoffs:
+    #     cdfForFeature(df, feat, cutoff)

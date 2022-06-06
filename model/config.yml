@@ -9,7 +9,8 @@ trainDataFile: 'trainset_featurized.csv'
 # goldDataFile: 'testset_featurized.csv'
 goldDataFile: 'evalset_featurized.csv'
 labelCorrectionMap:
-  'OTHER': 'SINUS'
+  'OTHER': 'NOT_AFIB'
+  'SINUS': 'NOT_AFIB'
   # 'NOISE': 'SINUS'
 features:
    - 'b2b_var'

@@ -11,9 +11,9 @@ from train import train
 
 if __name__ == "__main__":
     showClassificationReport = True
-    showFeatureImportance = False
+    showFeatureImportance = True
 
-    # features = [f.lower() for f in mu.getModelConfig().features]
+    features = [f.lower() for f in mu.getModelConfig().features]
     # features = set(features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
     # features = list(features)
     # resnet, resnet_data = train(
@@ -27,21 +27,33 @@ if __name__ == "__main__":
         usesplits=True,
         model="LabelModel",
         verbose=True,
+        filterUnreasonableValues=True
         )
     rf_sk, rf_sk_data = train(
         filterGold=False,
         usesplits=True,
         model="RandomForestSK",
         verbose=True,
-        # reduceDimension=True
+        filterUnreasonableValues=True
+        # reduceDimension=True,
+        # winsorize=True
         )
     lr, lr_data = train(
         filterGold=False,
         usesplits=True,
         model="LogisticRegression",
         verbose=True,
-        # reduceDimension=True
+        filterUnreasonableValues=True
+        # reduceDimension=True,
+        # winsorize=True
         )
+    df = pd.read_csv('./data/assets/testset_featurized_w_phillips.csv')
+    # Filter
+    import numpy as np
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df = df.dropna()
+    phillipsDF = df
+    phillips_true, phillips_pred = phillipsDF['label'].apply(lambda x: 'ATRIAL_FIBRILLATION' if x=='ATRIAL_FIBRILLATION' else 'SINUS'), phillipsDF['philafibmarker'].apply(lambda x: 'ATRIAL_FIBRILLATION' if x else 'SINUS')
     if (showClassificationReport):
         # resnet_cr = classification_report(
         #     y_true=resnet_data['testLabels'], y_pred=resnet_data['testPredictions']
@@ -58,14 +70,19 @@ if __name__ == "__main__":
             y_true=rf_sk_data['testLabels'],
             y_pred=rf_sk_data['testPredictions']
             )
+        phil_cr = classification_report(
+            y_true=phillips_true,
+            y_pred=phillips_pred
+            )
         print(f'LogisticRegressor classification report:\n{lr_cr}')
         print(f'RandomForest (sklearn) classification report:\n{randForestSK_cr}')
         # print(f'ResNet classification report:\n{resnet_cr}')
         print(f'RandomForest (autonlab) classification report:\n{"... in progress ..."}')
         print(f'Labelmodel classification report:\n{lm_cr}')
+        print(f'Phillips alerts classification report:\n{phil_cr}')
     if (showFeatureImportance):
-        rf_sk_featureImportance, rfSK_fiSorted = permutationFeatureImportance(rf_sk, rf_sk_data['testData'], rf_sk_data['testLabels'], feature_subset=features, n_repeats=20)
-        lr_featureImportance, lr_fiSorted = permutationFeatureImportance(lr, lr_data['testData'], lr_data['testLabels'], feature_subset=features, n_repeats=20)
+        rf_sk_featureImportance, rfSK_fiSorted = permutationFeatureImportance(rf_sk, rf_sk_data['testData'], rf_sk_data['testLabels'], feature_subset=features, n_repeats=10)
+        lr_featureImportance, lr_fiSorted = permutationFeatureImportance(lr, lr_data['testData'], lr_data['testLabels'], feature_subset=features, n_repeats=10)
         print('\n\n----- Feature importances -----\n\n')
         newlinetab = "\n\t"
         lr_fiSorted = [f'{name}: {importance:.2}' for name, importance in lr_fiSorted]

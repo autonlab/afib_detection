@@ -22,7 +22,15 @@ def applyScaler(df, featuresToScale, scaler):
     df[featuresToScale] = scaler.transform(df[featuresToScale])
     # print(df[featuresToScale])
     return df
-
+from scipy.stats.mstats import winsorize
+def winsorizeDF(df, featuresToWinsorize):
+    for feat in featuresToWinsorize:
+        if (feat == 'b2b_std' or feat == 'b2b_var'):
+            limits = [0, .18]
+        else:
+            limits = [0, .1]
+        df[feat] = winsorize(df[feat], limits=limits)
+    return df
 def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
     """_summary_
 
@@ -36,7 +44,6 @@ def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
         scaler = StandardScaler()
     else:
         raise ValueError(f'scalerType [{scalerType}] unsupported!')
-
     df[featuresToScale] = scaler.fit_transform(df[featuresToScale])
     return df, scaler
 

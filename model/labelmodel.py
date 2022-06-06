@@ -1,4 +1,5 @@
 from snorkel.labeling.model import LabelModel
+from snorkel.labeling import LFAnalysis
 import numpy as np
 
 from .assets.labelmodel_heuristics import get_vote_vector, numberToLabelMap
@@ -12,10 +13,11 @@ def getHeuristicVotes(featurizedData):
 class LabelModelCustom:
     def __init__(self, **kwargs):
         self.lm = LabelModel(cardinality=3, verbose=False)
+        self.l_train = None
 
     def fit(self, featurizedData):
-        L_train = getHeuristicVotes(featurizedData)
-        self.lm.fit(L_train=L_train, n_epochs=500, log_freq=100, seed=42)
+        self.l_train = getHeuristicVotes(featurizedData)
+        self.lm.fit(L_train=self.l_train, n_epochs=500, log_freq=100, seed=42)
 
     def predict(self, featurizedData):
         hVotes = getHeuristicVotes(featurizedData)
@@ -25,3 +27,6 @@ class LabelModelCustom:
     def predict_proba(self, featurizedData):
         hVotes = getHeuristicVotes(featurizedData)
         return self.lm.predict_proba(L=hVotes)
+    
+    def getAnalysis(self) -> LFAnalysis:
+        return LFAnalysis(self.l_train)

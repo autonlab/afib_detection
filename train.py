@@ -12,9 +12,10 @@ from model.df4tsc.resnet import Classifier_RESNET
 import data.manipulators as dm
 import data.utilities as du
 from model.labelmodel import LabelModelCustom
+from snorkel.labeling.model import LabelModel
 import model.utilities as mu
 
-def trainlm(trainfile=True):
+def trainlm(modifyLabels=False) -> LabelModelCustom:
     modelconfig = mu.getModelConfig()
     print(f'Loading features: {modelconfig.features}')
     print(f'Loading data set: {modelconfig.trainDataFile}')
@@ -30,12 +31,14 @@ def trainlm(trainfile=True):
     predictedProbas = [max(e) for e in fitModel.predict_proba(df)]
     df['label'] = predictedLabels
     df['confidence'] = predictedProbas
-    print(f'Writing labelmodel votes to: {modelconfig.trainDataFile} ...')
-    df.to_csv(
-        Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
-    )
-    print('Done.')
-    return
+    if (modifyLabels):
+        print(f'Writing labelmodel votes to: {modelconfig.trainDataFile} ...')
+        df.to_csv(
+            Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
+            index=False
+        )
+        print('Done.')
+    return fitModel
 
 def p(string, v):
     """Print if verbose on
@@ -43,7 +46,7 @@ def p(string, v):
     if (v):
         print(string)
 
-def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, filterGold=False, overwriteTrainset=None, overwriteTestset=None, reduceDimension=False):
+def train(model='RandomForestSK', winsorize=False, load=False, usesplits=True, verbose=False, filterUnreasonableValues=False, filterGold=False, overwriteTrainset=None, overwriteTestset=None, reduceDimension=False):
     """Train and return specified model.
      PRECONDITIONS:
     - CSV of featurized data in `data/assets`, csv title specified in `model/config.yml` in `trainDataFile` field
@@ -61,8 +64,10 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     modelconfig = mu.getModelConfig()
     modelconfig.features = [f.lower() for f in modelconfig.features]
     if (reduceDimension):
-        modelconfig.features = set(modelconfig.features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
-        modelconfig.features = list(modelconfig.features)
+        # modelconfig.features = set(modelconfig.features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
+        # modelconfig.features = list(modelconfig.features)
+
+        modelconfig.features = ['hrv_hf', 'hrv_lf', 'sse_2_clusters', 'sse_1_clusters', 'rmssd', 'pnn20', 'sample_entropy', 'max_sil_score', 'sdsd']
         print(f'Features after reduction: {modelconfig.features}')
 
     trainDataFile = overwriteTrainset if overwriteTrainset else modelconfig.trainDataFile
@@ -94,7 +99,11 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
 
     before = len(df); df = df.dropna(); after = len(df)
     p(f'\tDropped {before - after} rows with nan values present.', verbose)
-
+    if (winsorize):
+        df = dm.winsorizeDF(df, modelconfig.features)
+    if (filterUnreasonableValues):
+        df = df[df['b2b_iqr'] < 30]
+        goldData = goldData[goldData['b2b_iqr'] < 30]
     df_normalized, scaler = dm.computeAndApplyScaler(df, modelconfig.features)
 
     ## Split for testing and evaluation
@@ -108,6 +117,8 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
         p('Not splitting at all :-)', verbose)
         train = df_normalized
     if (not goldData.empty):
+        if (winsorize):
+            test = dm.winsorizeDF(test, modelconfig.features)
         test = dm.filterAndNormalize(goldData, modelconfig.features, preexistingScaler=scaler)
         if (filterGold):
             p('Filtering gold values too many standard devs away from training mean...', verbose)
@@ -132,6 +143,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
             p(f'\t Class {countsAfterward[i][0]} grew from {countsBeforehand[i][1]:5} to {countsAfterward[i][1]:5} elements', verbose)
     else:
         p('Skipping oversample.', verbose)
+    # print(train['label'])
     trainData, trainLabels = train[modelconfig.features], train['label']
     testData, testLabels = test[modelconfig.features], test['label']
     # t2Data, t2Labels = testOnLMLabels[modelconfig.features], testOnLMLabels['label']
@@ -140,7 +152,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     modelname = model
     if (model == 'RandomForestSK'):
         p('Training randomforest...', verbose)
-        model = RandomForestClassifier(max_depth=12, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .15, 'SINUS': .85}, random_state=66)
+        model = RandomForestClassifier(max_depth=12, n_estimators=1000, class_weight={'ATRIAL_FIBRILLATION': .15, 'NOT_AFIB': .85}, random_state=66)
         # fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight='balanced', random_state=66)
         model.fit(trainData, trainLabels)
         modelPredictions = model.predict(testData)
@@ -153,8 +165,8 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
         modelProbabilities = fitModel.predict_proba(testData)
         res = list()
         for modelPred in modelPredictions:
-            if modelPred == 'OTHER':
-                res.append('SINUS')
+            if modelPred == 'OTHER' or modelPred == 'SINUS':
+                res.append('NOT_AFIB')
             else:
                 res.append(modelPred)
         modelPredictions = res
@@ -225,7 +237,7 @@ def train(model='RandomForestSK', load=False, usesplits=True, verbose=False, fil
     return model, cacheddata
 
 if __name__ == "__main__":
-    trainlm()
+    trainlm(modifyLabels=True)
     # train(model='LabelModel', usesplits=False)
     # train(usesplits=False)
     # lrModel, cacheddata = train(usesplits=False, model="LogisticRegression", verbose=False)

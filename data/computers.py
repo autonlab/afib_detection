@@ -81,9 +81,9 @@ def getSignalFeatures(mvSequence):
 '''
 def featurize_longertimewindow(dataSlice, samplerate):
     try:
-        filtered = hp.remove_baseline_wander(dataSlice, samplerate)
-        filtered_scaled = hp.scale_data(filtered)
-        w, m = hp.process(filtered, samplerate, clean_rr=False)
+        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
+        ecg = sigs['ECG_Clean']
+        w, m = hp.process(ecg, samplerate, clean_rr=False)
         features = getRRIntervalStatistics(w['RR_list'])#getSignalFeatures(filtered)
         for feat in ['sd1', 'sd2', 'sd1/sd2', 'pnn20', 'pnn50']:
             features[feat] = m[feat] if isinstance(m[feat], float) else None
@@ -91,8 +91,7 @@ def featurize_longertimewindow(dataSlice, samplerate):
         features['hfd'] = hfd if isinstance(hfd, float) else None
         sampEn, _ = nk.entropy_sample(np.array(w['RR_list']), dimension=1)
         features['sample_entropy'] = sampEn
-        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
-        peaks, peakinfo = nk.ecg_peaks(sigs['ECG_Clean'], sampling_rate=samplerate)
+        peaks, peakinfo = nk.ecg_peaks(ecg, sampling_rate=samplerate)
         hrv_indices = nk.hrv_frequency(peaks, sampling_rate=samplerate, show=False)
         m = hrv_indices
         for feat in ['HRV_LF', 'HRV_HF', 'HRV_LFHF']:
@@ -145,14 +144,14 @@ def hopkinsStatistic(X):
 
 def featurize(dataSlice, samplerate):
     try:
-        detrended = hp.remove_baseline_wander(dataSlice, samplerate)
-        filtered_scaled = hp.scale_data(detrended)
-        w, m = hp.process(filtered_scaled, samplerate, clean_rr=False)
+        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
+        ecg = sigs['ECG_Clean']
+        w, m = hp.process(ecg, samplerate, clean_rr=False)
         beat2beatIntervals = list()
         for rrIntervalMS in w['RR_list']:
             beat2beatIntervals.append(60 / (rrIntervalMS/1000.0))
-        heartpyFeatsToKeep = ['bpm', 'rmssd', 'ibi', 'sdnn', 'sdsd']
         features = getb2bFeatures(beat2beatIntervals)
+        heartpyFeatsToKeep = ['bpm', 'rmssd', 'ibi', 'sdnn', 'sdsd']
         for feat in heartpyFeatsToKeep:
             features[feat] = m[feat] if isinstance(m[feat], float) else None
         return features

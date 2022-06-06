@@ -18,7 +18,8 @@ def innerCollectSeries(fin, group, dfColumns, searchDirectory):
         'start': list(),
         'stop': list(),
         'signal': list(),
-        'samplerate': list()
+        'samplerate': list(),
+        'label': list()
     }
     longSeries = {
         'fin_study_id': list(),
@@ -33,7 +34,7 @@ def innerCollectSeries(fin, group, dfColumns, searchDirectory):
     file = datautils.findFileByFIN(str(fin), searchDirectory)
     if (not file):
         print(f'Could not find fin_study_id: {fin} in {searchDirectory}. Skipping.')
-        return pd.DataFrame()
+        return pd.DataFrame(shortSeries), pd.DataFrame(longSeries)
     hr_series = datautils.HR_SERIES
 
     auf = aud.File.open(file)
@@ -50,6 +51,10 @@ def innerCollectSeries(fin, group, dfColumns, searchDirectory):
         shortSeries['stop'].append(stop)
         shortSeries['signal'].append(dataslice)
         shortSeries['samplerate'].append(samplerate)
+        if ('rhythm_label' in row):
+            shortSeries['label'].append('_'.join(row['rhythm_label'].split()).upper())
+        elif ('label' in row):
+            shortSeries['label'].append(row['label'])
 
         longSeries['fin_study_id'].append(fin)
         longSeries['start'].append(newStart)
@@ -76,14 +81,10 @@ def innerLoopFor(fin, group, dfColumns, searchDirectory, features):
     for feature in features:
         featurizedResult[feature] = list()
     for idx, row in group.iterrows():
-
+        label = row['label']
         start, stop = row['start'], row['stop']
-        if ('label' in dfColumns):
-            label = row['label']
         if ('confidence' in dfColumns):
             lm_confidence = row['confidence']
-        if ('rhythm_label' in dfColumns):
-            label = '_'.join(row['rhythm_label'].split()).upper()
         if (label == 'NOISE'): continue
         dataslice, samplerate = row['signal'], row['samplerate']
         longdataslice, longsamplerate = row['longsignal'], row['longsamplerate']
@@ -103,10 +104,12 @@ def innerLoopFor(fin, group, dfColumns, searchDirectory, features):
             featurizedResult['start'].append(start)
             featurizedResult['stop'].append(stop)
             featurizedResult['fin_study_id'].append(fin)
-            featurizedResult['label'].append(label)
+            if (label):
+                featurizedResult['label'].append(label)
             if ('confidence' in dfColumns):
                 featurizedResult['labelmodel_confidence'].append(lm_confidence)
     return pd.DataFrame(featurizedResult)
+
 def featurize_parallel(load=False):
     print('Featurizing in parallel...')
     dataconfig = datautils.getDataConfig()
@@ -129,8 +132,9 @@ def featurize_parallel(load=False):
         stop = time.time()
         shortSeries = pd.concat(shortSeries)
         longSeries = pd.concat(longSeries)
-        # dm.pickleDump(shortSeries, './data/assets/10000_signal_segments.pkl')
-        # dm.pickleDump(longSeries, './data/assets/10000_longsignal_segments.pkl')
+        # if (len(shortSeries) > 1000):
+        #     dm.pickleDump(shortSeries, './data/assets/10000_signal_segments.pkl')
+        #     dm.pickleDump(longSeries, './data/assets/10000_longsignal_segments.pkl')
         print(f'Took {(stop - start)/60:.2f} minutes to collect {len(df)} signals')
     # print(shortSeries.columns, longSeries.columns)
     shortSeries['longsignal'] = longSeries['signal']
@@ -144,7 +148,7 @@ def featurize_parallel(load=False):
 
     start = time.time()
     del longSeries
-    pds = Parallel(n_jobs=7)(delayed(innerLoopFor)(fin, group, df.columns, searchDirectory, dataconfig.features) for fin, group in shortSeries.groupby('fin_study_id'))
+    pds = Parallel(n_jobs=7)(delayed(innerLoopFor)(int(fin), group, df.columns, searchDirectory, dataconfig.features) for fin, group in shortSeries.groupby('fin_study_id'))
     stop = time.time()
     print(f'Took {(stop - start) / 60 :.2f} minutes to compute features')
     result = pd.concat(pds)
@@ -254,10 +258,10 @@ def featurize():
 if __name__ == '__main__':
     import warnings
     warnings.filterwarnings("ignore")
-    from pstats import SortKey
-    import cProfile
-    featurizeOutput = datautils.getDataConfig().featurizedDataOutput
-    print(f'Will save profile results to {featurizeOutput}')
-    cProfile.run("featurize()", Path(__file__).parent / 'results' / 'profiles' / f'featurizeRun_{featurizeOutput}.csv', sort=SortKey.CUMULATIVE)
+    # from pstats import SortKey
+    # import cProfile
+    # featurizeOutput = datautils.getDataConfig().featurizedDataOutput
+    # print(f'Will save profile results to {featurizeOutput}')
+    # cProfile.run("featurize()", Path(__file__).parent / 'results' / 'profiles' / f'featurizeRun_{featurizeOutput}.prof', sort=SortKey.CUMULATIVE)
     # featurize()
-    # featurize_parallel(load=False)
+    featurize_parallel(load=False)
