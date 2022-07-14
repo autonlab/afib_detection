@@ -118,6 +118,8 @@ def getFINFromPath(path):
     return path.split(os.sep)[-1].split('.')[0].split('_')[-1]
 
 def findFileByFIN(finStr, searchDir):
+    if isinstance(finStr, int):
+        finStr = str(finStr)
     if isinstance(searchDir, str):
         searchDir = Path(searchDir)
     for f in searchDir.glob('*.h5'):

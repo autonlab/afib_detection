@@ -17,7 +17,7 @@ import model.utilities as mu
 
 def trainlm(modifyLabels=False) -> LabelModelCustom:
     modelconfig = mu.getModelConfig()
-    print(f'Loading features: {modelconfig.features}')
+    print(f'Loading features: {modelconfig.features_nk}')
     print(f'Loading data set: {modelconfig.trainDataFile}')
     df = pd.read_csv(
         Path(__file__).parent / 'data' / 'assets' / modelconfig.trainDataFile,
@@ -62,12 +62,20 @@ def train(model='RandomForestSK', winsorize=False, load=False, usesplits=True, v
 
     ## Load necessary configuration from model
     modelconfig = mu.getModelConfig()
-    modelconfig.features = [f.lower() for f in modelconfig.features]
+    modelconfig.features = [f.lower() for f in modelconfig.features_nk]
     if (reduceDimension):
         # modelconfig.features = set(modelconfig.features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
         # modelconfig.features = list(modelconfig.features)
 
-        modelconfig.features = ['hrv_hf', 'hrv_lf', 'sse_2_clusters', 'sse_1_clusters', 'rmssd', 'pnn20', 'sample_entropy', 'max_sil_score', 'sdsd']
+        modelconfig.features = ['b2b_range', 'b2b_var', 'sse_2_clusters', 'sse_1_clusters', 'hrv_pnn20', 'hrv_pnn50', 'hrv_shanen', 'ecg_rate_mean', 'hrv_sd1']
+        modelconfig.features = [
+            'b2b_iqr',
+            'b2b_std',
+            'sse_1_clusters',
+            'sse_diff',
+            'hrv_sampen',
+            'hrv_pnn50'
+        ]
         print(f'Features after reduction: {modelconfig.features}')
 
     trainDataFile = overwriteTrainset if overwriteTrainset else modelconfig.trainDataFile
@@ -220,6 +228,11 @@ def train(model='RandomForestSK', winsorize=False, load=False, usesplits=True, v
                 newModelPredictions.append(pred)
         modelPredictions = newModelPredictions
         testLabels = testLabels.to_numpy()[indices]
+    elif (model=='transformer'):
+        #load model
+        pass
+
+        #load and transform data
 
     p('Done', verbose)
     cacheddata = {

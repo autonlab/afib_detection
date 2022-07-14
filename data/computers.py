@@ -11,6 +11,8 @@ from pyclustertend import hopkins
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from .nk_computers import ecg_process, ecg_analyze
+import logging
 
 def getb2bFeatures(beat2BeatSequence):
     return {
@@ -19,7 +21,6 @@ def getb2bFeatures(beat2BeatSequence):
         'b2b_range': np.ptp(beat2BeatSequence),
         'b2b_std': np.std(beat2BeatSequence)
     }
-
 
 def getSignalFeatures(mvSequence):
     n = len(mvSequence)
@@ -80,16 +81,26 @@ def getSignalFeatures(mvSequence):
 
 '''
 def featurize_longertimewindow(dataSlice, samplerate):
+    sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
+    print(sigs.head())
+    ecg = sigs['ECG_Clean']
+    rPeaks = sigs['ECG_R_Peaks'].to_numpy().nonzero()[0]
+    rrIntervals = list()
+    for i in range(len(rPeaks)-1):
+        rrIntervals.append(((rPeaks[i+1] - rPeaks[i]) / samplerate)*1000)
+    print(rrIntervals)
+    #w, m = hp.process(ecg, samplerate, clean_rr=False)
+    analysis_outputs = nk.ecg_analyze(sigs, sampling_rate=samplerate)
+    print(sigs.columns)
+    print(analysis_outputs.columns)
     try:
-        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
-        ecg = sigs['ECG_Clean']
-        w, m = hp.process(ecg, samplerate, clean_rr=False)
-        features = getRRIntervalStatistics(w['RR_list'])#getSignalFeatures(filtered)
+        features = getRRIntervalStatistics(rrIntervals)#getSignalFeatures(filtered)
         for feat in ['sd1', 'sd2', 'sd1/sd2', 'pnn20', 'pnn50']:
             features[feat] = m[feat] if isinstance(m[feat], float) else None
         hfd = hfda.measure(w['RR_list'], 5) #https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6110872/
         features['hfd'] = hfd if isinstance(hfd, float) else None
-        sampEn, _ = nk.entropy_sample(np.array(w['RR_list']), dimension=1)
+        sampEn, _ = nk.entropy_sample(rrIntervals, dimension=1)
+        print(sampEn, analysis_outputs['HRV_SampEn'])
         features['sample_entropy'] = sampEn
         peaks, peakinfo = nk.ecg_peaks(ecg, sampling_rate=samplerate)
         hrv_indices = nk.hrv_frequency(peaks, sampling_rate=samplerate, show=False)
@@ -99,6 +110,24 @@ def featurize_longertimewindow(dataSlice, samplerate):
         return features
     except:
         return None
+
+def featurize_longertimewindow_nk(dataSlice, samplerate):
+    try:
+        sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
+        measures = ecg_analyze(sigs, sampling_rate=samplerate)
+        sigs.columns = sigs.columns.str.lower()
+        measures.columns = measures.columns.str.lower()
+        rPeaks = sigs['ecg_r_peaks'].to_numpy().nonzero()[0]
+        rrIntervals = list()
+        for i in range(len(rPeaks)-1):
+            rrIntervals.append(((rPeaks[i+1] - rPeaks[i]) / samplerate)*1000)
+        features = getRRIntervalStatistics(rrIntervals)#getSignalFeatures(filtered)
+        m = measures
+        for feat in ['hrv_hfd', 'hrv_lf', 'hrv_hf', 'hrv_lfhf', 'hrv_sd1', 'hrv_sd2', 'hrv_sd1sd2', 'hrv_pnn20', 'hrv_pnn50', 'hrv_hfd', 'hrv_sampen', 'hrv_shanen', 'hrv_apen']:
+            features[feat] = m[feat][0] if isinstance(m[feat][0], float) else None
+        return features
+    except Exception:
+        return logging.exception('featurize_nk longer time window')
 
 def getRRIntervalStatistics(rrIntervals):
     #first, make rr, rr_{n+1} pairs
@@ -144,7 +173,7 @@ def hopkinsStatistic(X):
 
 def featurize(dataSlice, samplerate):
     try:
-        sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
+        sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
         ecg = sigs['ECG_Clean']
         w, m = hp.process(ecg, samplerate, clean_rr=False)
         beat2beatIntervals = list()
@@ -158,6 +187,23 @@ def featurize(dataSlice, samplerate):
     except:
         return None
 
+def featurize_nk(dataSlice, samplerate):
+    try:
+        sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
+        m_nk = ecg_analyze(sigs, sampling_rate=samplerate, withhrv=False)
+        m_nk.columns = m_nk.columns.str.lower()
+        rPeaks = sigs['ECG_R_Peaks'].to_numpy().nonzero()[0]
+        beat2beatIntervals = list()
+        for i in range(len(rPeaks)-1):
+            rrIntervalS = ((rPeaks[i+1] - rPeaks[i]) / samplerate)
+            beat2beatIntervals.append(60 / rrIntervalS)
+        features = getb2bFeatures(beat2beatIntervals)
+        nkFeatsToKeep = ['ecg_rate_mean', 'hrv_rmssd', 'hrv_sdnn', 'hrv_sdsd']
+        for feat in nkFeatsToKeep:
+            features[feat] = m_nk[feat][0] if isinstance(m_nk[feat][0], float) else None
+        return features
+    except Exception:
+        return logging.exception('featurize_nk')
 
 def featurize_2(dataSlice, samplerate):
     detrended = hp.remove_baseline_wander(dataSlice, samplerate)

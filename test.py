@@ -11,9 +11,10 @@ from train import train
 
 if __name__ == "__main__":
     showClassificationReport = True
-    showFeatureImportance = True
+    showFeatureImportance = False
 
-    features = [f.lower() for f in mu.getModelConfig().features]
+    features = [f.lower() for f in mu.getModelConfig().features_nk]
+    # features = ['b2b_range', 'b2b_var', 'sse_2_clusters', 'sse_1_clusters', 'hrv_pnn20', 'hrv_pnn50', 'hrv_shanen', 'ecg_rate_mean', 'hrv_sd1']
     # features = set(features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])
     # features = list(features)
     # resnet, resnet_data = train(
@@ -27,15 +28,15 @@ if __name__ == "__main__":
         usesplits=True,
         model="LabelModel",
         verbose=True,
-        filterUnreasonableValues=True
+        # filterUnreasonableValues=True
         )
     rf_sk, rf_sk_data = train(
         filterGold=False,
         usesplits=True,
         model="RandomForestSK",
         verbose=True,
-        filterUnreasonableValues=True
-        # reduceDimension=True,
+        # filterUnreasonableValues=True
+        reduceDimension=True,
         # winsorize=True
         )
     lr, lr_data = train(
@@ -43,8 +44,8 @@ if __name__ == "__main__":
         usesplits=True,
         model="LogisticRegression",
         verbose=True,
-        filterUnreasonableValues=True
-        # reduceDimension=True,
+        # filterUnreasonableValues=True
+        reduceDimension=True,
         # winsorize=True
         )
     df = pd.read_csv('./data/assets/testset_featurized_w_phillips.csv')

@@ -10,7 +10,7 @@ from tqdm import tqdm
 from typing import List, Union
 
 import data.utilities as datautils
-from data.computers import featurize
+from data.computers import featurize_nk
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import roc_auc_score, make_scorer
@@ -33,42 +33,46 @@ def plotSegment(fin, start, stop, searchDirectory='/home/rkaufman/workspace/remo
     plotSlice_butterworthFiltered(dataslice, samplerate, searchDirectory, fin, start, extrainfo, dst=dst)
 
 def plotSlice_butterworthFiltered(dataSlice, samplerate, searchDir, fin=None, start=None, extrainfo=None, dst=None):
-    ecg = dataSlice
-    text = ''
-    w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
-    hp.plotter(w, m, figsize=(12, 4), show=False)
-    for feat in ['b2b_iqr', 'b2b_var', 'b2b_std']:
-        text += f'{feat}: {extrainfo[feat]}\n'
-    plt.figtext(.1, .75, text, ha="left",
-        bbox = {'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
-    if (dst):
-        plt.savefig(
-            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_hp.svg'
-        )
+    # ecg = dataSlice
+    # text = ''
+    # w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
+    # hp.plotter(w, m, figsize=(12, 4), show=False)
+    # for feat in ['b2b_iqr', 'b2b_var', 'b2b_std']:
+    #     text += f'{feat}: {extrainfo[feat]}\n'
+    # plt.figtext(.1, .75, text, ha="left",
+    #     bbox = {'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
+    # if (dst):
+    #     plt.savefig(
+    #         dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_hp.svg'
+    #     )
 
-    plt.clf()
+    # plt.clf()
+    feats = featurize_nk(dataSlice, samplerate)
     sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
-    ecg = sigs['ECG_Clean']
-    feats = featurize(ecg, samplerate)
-    w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
-    hp.plotter(w, m, figsize=(12, 4), show=False)
+    nk.ecg_plot(sigs)
+    # w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
+    # hp.plotter(w, m, figsize=(12, 4), show=False)
     text = ''
-    for feat in ['b2b_iqr', 'b2b_var', 'b2b_std']:
-        text += f'{feat}: {feats[feat]}\n'
+    if feats:
+        for feat in ['b2b_iqr', 'b2b_var', 'b2b_std', 'b2b_range']:
+            text += f'{feat}: {feats[feat]}\n'
     plt.figtext(.1, .75, text, ha="left",
         bbox = {'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
     if (dst):
         plt.savefig(
-            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_nk.svg'
+            dst / f'{int(fin)}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_nk.svg'
         )
 
     plt.clf()
 
 def cdfForFeature(df, feat, cutoff=None):
-    if (False):# feat == 'b2b_std' or feat == 'b2b_var'):
+    shouldWinsorize = False
+    if (feat in ['b2b_std', 'b2b_var', 'b2b_iqr']):
         limits = [0, .18]
     else:
         limits = [0, .05]
+    if (not shouldWinsorize):
+        limits = [0, 0.05]
     series = winsorize(df[feat], limits=limits)
     print(f"{feat}: min: {min(series):.2} | max: {max(series):.2}")
     plt.hist(series,
@@ -81,7 +85,7 @@ def cdfForFeature(df, feat, cutoff=None):
         plt.axvline(cutoff, color='k', linestyle='dashed')
     plt.title(label=feat + ' CDF') 
     plt.savefig(
-        f'./results/assets/cdfs/{feat}_cdf_nk.png'
+        f'./results/assets/cdfs/{feat}_cdf_nk_lose5.svg'
     )
     plt.clf()
 
@@ -127,8 +131,6 @@ def plotSlice_hrv(dataSlice, samplerate, searchDir, fin=None, start=None, extrai
         )
     
     plt.clf()
-
-
 
 def plotSlice(dataSlice, samplerate, searchDirectory, fin=None, start=None, extrainfo=None, dst=None):
     # fig, (ax1, ax2) = plt.subplots(2, 2)
@@ -195,33 +197,6 @@ def plotSlice(dataSlice, samplerate, searchDirectory, fin=None, start=None, extr
         )
     plt.close()
     plt.clf()
-    ### nk quality / processing
-    # # print(data)
-    # # ecg_cleaned = nk.ecg_clean(dataSlice, sampling_rate=samplerate)
-    # sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
-    # # cleaned = hp.remove_baseline_wander(hp.scale_data(dataSlice), samplerate)
-    # # bandpassed = nk.signal_filter(cleaned, lowcut=20, highcut=80)
-    # # nk.ecg_plot(sigs)
-    # ecg = sigs['ECG_Clean']
-    # quality = nk.ecg_quality(ecg, sampling_rate=samplerate, method="zhao2018")
-
-
-    # w, m = hp.process(hp.scale_data(ecg, samplerate), samplerate, clean_rr=False)
-    # hp.plotter(w, m, figsize=(12, 4), show=False)
-    # if (not(extrainfo is None)):
-    #     text = f'ECG Quality: {quality}\n'
-    #     text += '\n'.join([f'{feat:10}: {extrainfo[feat]:5.4}' for feat in modelconfig.features])
-    #     plt.figtext(.004, .2, text, ha="left")
-    # if (dst):
-    #     plt.savefig(
-    #         dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_neurokit_withbeats.png'
-    #     )
-    # else:
-    #     plt.savefig(
-    #         Path(__file__).parent / 'results' / 'assets' / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_neurokit_default.png'
-    #     )
-    # plt.close()
-    # plt.clf()
 
 def quantifyNoise(df, searchDirectory='/home/rkaufman/workspace/remote'):
     resk, respower, resbaseline, restemplate = list(), list(), list(), list()
@@ -470,7 +445,18 @@ def lmHeuristicImportances():
     print('\n'.join([f'{h}: {w:.2}' for h, w in heuristicWeights]))
 
 
-
+def getSamplesFromPercentile(df: pd.DataFrame, feat: str, percentile: int, numSamples=5):
+    valueOfPercentile = np.percentile(df[feat], percentile) 
+    print(f'{percentile}th percentile value of {feat}: {valueOfPercentile}')
+    lowBound = valueOfPercentile-4#.03*(maxim-minim)
+    highBound = valueOfPercentile+4#.03*(maxim-minim)
+    print(lowBound, highBound)
+    boundedDF = df[(lowBound <= df[feat]) & (df[feat] <= highBound)]
+    sampleOfVal = boundedDF.sample(min(numSamples, len(boundedDF)))
+    plotDFSegments(
+        sampleOfVal,
+        Path(f'./results/assets/{percentile}_percentile_{feat}_plots')
+    )
 from itertools import cycle
 
 if __name__ == '__main__':
@@ -507,8 +493,8 @@ if __name__ == '__main__':
     # withnoise = quantifyNoise(pd.read_csv(
     #     './testset_withpredictions.csv',
     #     parse_dates=['start', 'stop']))
-    compareFeatureSets('trainset_featurized.csv', 'evalset_featurized.csv', dst='./results/assets/train_vs_eval')
-    compareFeatureSets('trainset_featurized.csv', 'testset_featurized.csv', dst='./results/assets/train_vs_test')
+    # compareFeatureSets('trainset_featurized.csv', 'evalset_featurized.csv', dst='./results/assets/train_vs_eval')
+    # compareFeatureSets('trainset_featurized.csv', 'testset_featurized.csv', dst='./results/assets/train_vs_test')
     # compareFeatureSets('evalset_final_cleaned.csv','testset_featurized_withextras.csv',dst='./results/assets/eval_vs_test')
     # compareFeatureSets('trainset_10000_featurized_withextras.csv', 'evalset_final_cleaned.csv', dst='./results/assets/train_vs_eval')
     # withnoise = quantifyNoise(pd.read_csv(
@@ -537,23 +523,32 @@ if __name__ == '__main__':
     #     randos = d#.sample(n=20)
     #     plotDFSegments(randos, Path(f'/home/rkaufman/workspace/afib_detection/results/assets/'))
 
-    # df = pd.read_csv('./data/assets/trainset_featurized.csv', parse_dates=['start', 'stop'])
-    # df_insane = df[df['b2b_iqr'] > 30]
+    # df = pd.read_csv('./data/assets/testset_featurized.csv', parse_dates=['start', 'stop'])
+    # df_insane = df[df['b2b_iqr'] > 1400]
     # print(len(df_insane))
-    # df_insane = df_insane.sample(10)
+    # # df_insane = df_insane.sample(10)
     # plotDFSegments(
     #     df_insane,
-    #     Path('/home/rkaufman/workspace/afib_detection/results/assets/insane_feature_analysis_nk')
+    #     Path('/home/rkaufman/workspace/afib_detection/results/assets/insane_feature_analysis_testset')
     # )
     # lmHeuristicImportances()
-    # featsAndCutoffs = [
-    #     ('b2b_std', 5),
-    #     ('b2b_var', .05),
-    #     ('b2b_iqr', 6),
-    #     ('pnn20', .80),
-    #     ('pnn50', .55)
-    # ]
-    # df = pd.read_csv('./data/assets/5000_segments_featurized.csv')
+    featsAndCutoffs = [
+        ('b2b_range', 5),
+        ('b2b_std', 5),
+        ('b2b_var', .05),
+        ('b2b_iqr', 6),
+        ('pnn20', .80),
+        ('pnn50', .55)
+    ]
+    df = pd.read_csv('./data/assets/5000_featurized_nk.csv', parse_dates=['start', 'stop'])
+    # getSamplesFromPercentile(df, 'b2b_iqr', 90)
+    # getSamplesFromPercentile(df, 'b2b_iqr', 95)
+    # getSamplesFromPercentile(df, 'b2b_range', 90)
+    # getSamplesFromPercentile(df, 'b2b_range', 95)
+    getSamplesFromPercentile(df, 'b2b_range', 99, 10)
+    getSamplesFromPercentile(df, 'b2b_iqr', 99, 10)
+    getSamplesFromPercentile(df, 'b2b_range', 97)
+    getSamplesFromPercentile(df, 'b2b_iqr', 97)
     # # df = pd.read_csv('./data/assets/trainset_featurized.csv')
     # for feat, cutoff in featsAndCutoffs:
     #     cdfForFeature(df, feat, cutoff)

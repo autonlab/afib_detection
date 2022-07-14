@@ -2,12 +2,12 @@ from snorkel.labeling.model import LabelModel
 from snorkel.labeling import LFAnalysis
 import numpy as np
 
-from .assets.labelmodel_heuristics import get_vote_vector, numberToLabelMap
+from .assets.labelmodel_heuristics import get_vote_vector, get_vote_vector_nk, numberToLabelMap
 
 def getHeuristicVotes(featurizedData):
     L_train = list()
     for i, row in featurizedData.iterrows():
-        L_train.append(get_vote_vector(**row))
+        L_train.append(get_vote_vector_nk(**row))
     return np.array(L_train)
 
 class LabelModelCustom:
