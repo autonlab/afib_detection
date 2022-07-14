@@ -64,7 +64,15 @@ def identifyEventsForFIN(fin: int, searchDirectory: Path, dst: Path = Path('./')
         pd.DataFrame(resultDF).to_csv(dst / f"{fin}.csv", index=False)
 
 if __name__=='__main__':
-    identifyEventsForFIN(1974347, Path('/home/rkaufman/workspace/remote'))
-    # identifyEventsForFIN(1331644, Path('/home/rkaufman/workspace/remote'))
-    
+    fins = pd.read_csv('/zfsauton2/home/rkaufman/misc_data/chronicoranyaf.csv')
+    fins_nonchronic = fins[fins['chronicaf'] == 0]
+    print(f"Culled from {len(fins)} to {len(fins_nonchronic)} patients for analysis.")
+    fins.columns = fins.columns.str.lower()
+    fins = fins['fin_study_id'].apply(int).to_numpy()
 
+    src = Path('/zfsmladi/originals')
+    dst = Path('/zfsauton2/home/rkaufman/afib_stitching/')
+
+    from joblib import Parallel, delayed
+    Parallel(n_jobs=80)(delayed(identifyEventsForFIN)(fin, src, dst) for fin in fins)
+    # identifyEventsForFIN(1331644, Path('/home/rkaufman/workspace/remote'))
