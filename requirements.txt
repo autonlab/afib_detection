@@ -1,7 +1,7 @@
 absl-py==1.0.0
 asttokens==2.0.5
 astunparse==1.6.3
-audata==1.0.3
+audata
 backcall==0.2.0
 backports.zoneinfo==0.2.1
 bidict==0.22.0
@@ -47,7 +47,7 @@ networkx==2.6.3
 neurokit2==0.1.7
 nolds==0.5.2
 numba==0.54.1
-numpy==1.20.3
+numpy<1.20.0
 oauthlib==3.2.0
 opencv-python==4.5.5.64
 opt-einsum==3.3.0

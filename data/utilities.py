@@ -68,30 +68,6 @@ def binary_search_timeseries(searchtime, auf, lo=0):
     else:
         return hi
 
-# def getLabelModel()
-#     lfMod = self.getLFModule()
-#     labels = lfMod.getLabels()
-#     lfNames = lfMod.get_LF_names()
-#     if (votes):
-#         pass
-#     elif (len(models.Vote.query.filter_by(project_id=self.id).all()) > 0):
-#         #use calculated votes
-#         votes, _ = self.getVotes([f.id for f in self.files])
-#     else:
-#         votes = self.computeVotes([f.id for f in self.files])
-#     segIds = sorted(votes.keys())
-#     L_train = []
-#     for segId in segIds:
-#         if (len(votes[segId]) > 0):
-#             L_train.append([labels[v] for v in votes[segId]])
-#     lfNumCorrect, lfNumNonAbstains = [0 for v in lfNames], [0 for v in lfNames]
-#     lfNumAbstains = [0 for v in lfNames]
-#     L_train = np.array(L_train)
-#     lm = LabelModel(cardinality=len(labels.keys()), verbose=False)
-#     lm.fit(L_train=L_train, n_epochs=500, log_freq=100, seed=42)
-#     lm_predictions = lm.predict_proba(L=L_train)
-#     predsByFilename = dict()
-#     numbersToLabels = lfMod.number_to_label_map()
 def getSliceFIN(fin, series, starttime, stoptime, searchDir):
     file = findFileByFIN(str(fin), searchDir)
     dataslice, samplerate = getSlice(file, series, starttime, stoptime)

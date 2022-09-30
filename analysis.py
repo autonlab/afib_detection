@@ -1,6 +1,7 @@
 import datetime as dt
 import functools
 from pathlib import Path
+from types import resolve_bases
 import pandas as pd
 import heartpy as hp
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ from typing import List, Union
 
 import data.utilities as datautils
 from data.computers import featurize_nk
+import model.utilities as mu
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import roc_auc_score, make_scorer
@@ -21,6 +23,186 @@ from data.custom_hp_plotters import plotter, plot_poincare
 
 import neurokit2 as nk
 from data.sqis import k_SQI, p_SQI, bas_SQI, orphanidou2015_sqi
+from prediction.europace.loadData import endTimeForPatient, getAllRecordIDs
+
+def convertUTCToCurrent(utcTime: dt.datetime) -> dt.datetime:
+    #fromtimestamp converts into local time of current machine, dependent on auviewer
+    return dt.datetime.fromtimestamp(utcTime.timestamp())
+
+trainset = ['00', '01', '05', '06', '07', '08', '10', '100', '101', '102', '11', '113', '114',
+ '115', '116', '117', '119', '120', '122', '13', '16', '19', '20', '203', '207', '22',
+ '23', '24', '28', '32', '34', '35', '37', '39', '43', '44', '45', '48', '53', '55',
+ '56', '58', '60', '62', '64', '72', '103', '111', '118', '12', '17', '18', '202',
+ '208', '21', '38', '42', '54', '65', '69', '70', '71', '75']
+def viewConfLeadingUpToEpisode(dataDF, subsrc='', dst=Path('/home/rkaufman/workspace/afib_detection/results/assets/leadingConf_survival')):
+    from prediction.europace.loadData import readAllEpisodes, timeIntervals
+    allEpisodes = readAllEpisodes()
+    def modelToUse(t, timeIntervals=timeIntervals):
+        for start, stop in timeIntervals:
+            if start <= t and t <= stop:
+                return f"afib_in_{start}_to_{stop}"
+        return None
+    for idx, ep in allEpisodes.groupby('id'):
+        ep = ep.sort_values('start').iloc[0, :]
+        # inTrainset = ep["id"] in trainset
+        # if (inTrainset): continue
+        # print(ep)
+        #collect data in dataDF that is within 2 hours of episode start
+        relevantData = dataDF[((dataDF['time'] - ep['start']) < dt.timedelta(hours=2)) & (dataDF['patient_id'] == ep['id'])]
+        # print(len(relevantData))
+        # sorted(relevantData, key=lambda x:  x['time'])
+        x, y = list(), list()
+        for _, datum in relevantData.iterrows():
+            minutesBeforeEpisode = abs((datum['time'] - ep['start']).total_seconds() // 60)
+            x.append(minutesBeforeEpisode)
+            y.append(datum['model_confidence'])
+                # print(minutesBeforeEpisode, modelToUse(minutesBeforeEpisode))
+            intest = datum['testset']
+        if (len(x) == 0):
+            continue
+        sortedDescending = sorted(zip(x, y), reverse=True, key=lambda z: z[0])
+        # print(sortedDescending)
+        # x, y = sorted(x, reverse=True)
+        x, y = zip(*sortedDescending)
+        plt.xlabel('Minutes before atrial fibrillation episode')
+        plt.ylabel('Model confidence')
+        plt.gca().invert_xaxis()
+        plt.gca().set_ylim([0, 1.0])
+        plt.plot(x, y)
+        plt.title(f"Patient ID: {ep['id']}; Episode Start: {ep['start'].strftime('%m-%d-%Y_%H:%M:%S')}")
+        p = dst / (subsrc + '/' +  ('test' if intest else 'train'))
+        plt.savefig(
+            p  /f'{ep["id"]}_{ep["start"].strftime("%m-%d-%Y_%H:%M:%S")}.png',
+            bbox_inches='tight'
+        )
+        plt.clf()
+    #now add the negatives
+    for id in getAllRecordIDs():
+        x, y = list(), list()
+        relevantData = dataDF[(dataDF['patient_id'] == id) & (dataDF['event'] == False)]
+        print(len(relevantData))
+        for _, datum in relevantData.iterrows():
+            minutesBeforeEpisode = abs((datum['time'] - endTimeForPatient(id)).total_seconds() // 60)
+            x.append(minutesBeforeEpisode)
+            y.append(datum['model_confidence'])
+                # print(minutesBeforeEpisode, modelToUse(minutesBeforeEpisode))
+            intest = datum['testset']
+        if (len(x) == 0):
+            continue
+        sortedDescending = sorted(zip(x, y), reverse=True, key=lambda z: z[0])
+        # print(sortedDescending)
+        # x, y = sorted(x, reverse=True)
+        x, y = zip(*sortedDescending)
+        plt.xlabel('Minutes before signal end (censoring event)')
+        plt.ylabel('Model confidence')
+        plt.gca().invert_xaxis()
+        plt.gca().set_ylim([0, 1.0])
+        plt.plot(x, y)
+        plt.title(f"Patient ID: {ep['id']}; Episode Start: {ep['start'].strftime('%m-%d-%Y_%H:%M:%S')}")
+        p = dst / (subsrc + '/' +  ('baseline (no event)'))
+        plt.savefig(
+            p  /f'{ep["id"]}_{ep["start"].strftime("%m-%d-%Y_%H:%M:%S")}.png',
+            bbox_inches='tight'
+        )
+        plt.clf()
+    return 0
+def viewSegments(df, dst, labelmodel=None, heuristicWeights=None):
+    heuristics  = [
+        'variation_afib',
+        'variation_other',
+        'variation_sinus',
+        'iqr_afib',
+        'iqr_other',
+        'iqr_sinus',
+        'range_afib',
+        'range_other',
+        'range_sinus',
+        'std_afib',
+        'std_other',
+        'std_sinus',
+        'pnn20_afib',
+        'pnn20_other',
+        'pnn20_sinus',
+        #'pnn50_afib',
+        'pnn50_other',
+        'pnn50_sinus',
+        'rmssd_afib',
+        'rmssd_other',
+        'rmssd_sinus',
+        'sdnn_afib',
+        'sdnn_other',
+        'sdnn_sinus',
+        'hopkins_sinus',
+        'hopkins_other',
+        'sil_coef_sinus',
+        'sil_coef_other',
+        'sse_afib_other',
+        'sse_afib_sinus',
+        'sse_diff_afib',
+        'trainedPhysionet'
+    ]
+    if (labelmodel):
+        lmPreds, hVotes = labelmodel.predict(df, returnHeuristicVotes=True)
+    for j, k in enumerate(df.iterrows()):
+        _, row = k
+        start, stop, fin = row['start'], row['stop'], row['fin_study_id']
+        # print(dt.datetime.utcfromtimestamp(start.timestamp()), dt.datetime.fromtimestamp(start.timestamp()), start)
+        # print(dt.datetime.fromtimestamp(dt.datetime.utcfromtimestamp(start.timestamp()).timestamp()), start)
+        # 1/0
+        signal, samplerate = datautils.getSlice(datautils.findFileByFIN(fin, '/home/rkaufman/workspace/remote'), datautils.HR_SERIES, start, stop)
+        signals, _ = nk.ecg_process(signal, sampling_rate=samplerate)
+        signal = signals['ECG_Clean']
+
+        #text will be all features and annotation and model confidence in afib
+        text = f"Annotation: {row['label']}" + " | " + f"Model confidence in afib: {row['afib_confidence']}" + "\n"
+        modelConfig = mu.getModelConfig()
+        xaxis = pd.date_range(start=start, end=stop, periods=len(signal))
+        for i in range(len(modelConfig.features_nk)):
+            feat = modelConfig.features_nk[i]
+            if (i == 0):
+                text += f"   {feat:7}: {row[feat]:03.2}"
+            else:
+                text += f" | {feat:7}: {row[feat]:03.2}"
+            if (i % (len(modelConfig.features_nk) // 3) == 0):
+                if (i == 0): continue
+                text += "\n"
+
+        plt.figure(figsize=(12, 4))
+        plt.figtext(0, .99, text, ha="left", va="top",
+            bbox = {'facecolor': 'green', 'alpha': 0.5, 'pad': 5})
+        if (labelmodel):
+            converts = {
+                'ATRIAL_FIBRILLATION': 'A-FIB',
+                'SINUS': 'SINUS',
+                'OTHER': 'OTHER',
+                'ABSTAIN': 'ABSTN'
+            }
+            lmPred, hVoteSet = lmPreds[j], hVotes[j]
+            numTopWeightsToCollect = 13
+            newText = f"LM Pred: {converts[lmPred]}" + "\n"
+            for i in range(numTopWeightsToCollect):
+                hTitle, hWeight = heuristicWeights[i]
+                vote = hVoteSet[heuristics.index(hTitle)]
+                convertedVote = converts[vote]
+                newText +=  f"{hTitle} [{hWeight:.2}]: {convertedVote}" + "\n"
+            plt.figtext(0, .01, newText, ha="left", va="bottom",
+                bbox = {'facecolor': 'blue', 'alpha': 0.5, 'pad': 5})
+
+        plt.plot(xaxis, signal)
+        plt.subplots_adjust(left=0.19, right=0.95, top=0.75, bottom=0.05)
+        plt.title(f"FIN: {fin}, start: {start.strftime('%m-%d-%Y_%H:%M:%S')}")
+        plt.savefig(
+            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}.png',
+            bbox_inches='tight'
+        )
+        plt.clf()
+        nk.ecg_plot(signals)
+        plt.title(f"FIN: {fin}, start: {start.strftime('%m-%d-%Y_%H:%M:%S')}")
+        plt.savefig(
+            dst / f'{fin}_{start.strftime("%m-%d-%Y_%H:%M:%S")}_neurokitView.png'
+        )
+        plt.clf()
+    return
 
 def plotDFSegments(df, dst):
     for _, row in df.iterrows():
@@ -89,7 +271,7 @@ def cdfForFeature(df, feat, cutoff=None):
     )
     plt.clf()
 
-def plotSlice_morphology(dataSlice, samplerate, searchDir, fin=None, start=None, extrainfo=None, dst=None):
+def plotSlice_morphology(dataSlice, samplerate, fin=None, start=None, extrainfo=None, dst=None):
     sigs, info = nk.ecg_process(dataSlice, sampling_rate=samplerate)
     ecg = sigs['ECG_Clean']
     _, rpeaks = nk.ecg_peaks(ecg, sampling_rate=samplerate)
@@ -133,20 +315,14 @@ def plotSlice_hrv(dataSlice, samplerate, searchDir, fin=None, start=None, extrai
     plt.clf()
 
 def plotSlice(dataSlice, samplerate, searchDirectory, fin=None, start=None, extrainfo=None, dst=None):
-    # fig, (ax1, ax2) = plt.subplots(2, 2)
     plt.subplot(221)
-
-    # equivalent but more general
     plt.figure(figsize=(12, 8))
-    # plt.subplots(2, 2)
-
     plt.subplots_adjust(wspace= 0.25, hspace= 0.25)
 
-    # plt.subplot(2, 1, 1)
     stop = start + dt.timedelta(seconds=10)
-    newStart, newStop = start - dt.timedelta(seconds=25), stop + dt.timedelta(seconds=25)
+    # newStart, newStop = start - dt.timedelta(seconds=25), stop + dt.timedelta(seconds=25)
     file = datautils.findFileByFIN(str(fin), searchDirectory)
-    dataslice, samplerate_n = datautils.getSlice(file, datautils.HR_SERIES, newStart, newStop)
+    dataslice, samplerate_n = datautils.getSlice(file, datautils.HR_SERIES, start, stop)
     detrended = hp.remove_baseline_wander(dataslice, samplerate_n)
     detrended_scaled_og = hp.scale_data(detrended)
     w, m = hp.process(detrended_scaled_og, samplerate_n, clean_rr=False)
@@ -435,6 +611,7 @@ def lmHeuristicImportances():
         'sse_afib_other',
         'sse_afib_sinus',
         'sse_diff_afib',
+        'trainedPhysionet'
     ]
     labelmodel = trainlm(modifyLabels=False)
     # lfAnalysis = labelmodel.getAnalysis()
@@ -443,6 +620,7 @@ def lmHeuristicImportances():
     heuristicWeights = zip(heuristics, heuristicWeights)
     heuristicWeights = sorted(heuristicWeights, reverse=True, key=lambda x: x[1])
     print('\n'.join([f'{h}: {w:.2}' for h, w in heuristicWeights]))
+    return labelmodel, heuristicWeights
 
 
 def getSamplesFromPercentile(df: pd.DataFrame, feat: str, percentile: int, numSamples=5):
@@ -457,9 +635,33 @@ def getSamplesFromPercentile(df: pd.DataFrame, feat: str, percentile: int, numSa
         sampleOfVal,
         Path(f'./results/assets/{percentile}_percentile_{feat}_plots')
     )
+
+
 from itertools import cycle
 
 if __name__ == '__main__':
+    # df = pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'final_annotations_featurized_nka.csv', parse_dates=['start', 'stop']
+    # )
+    # df = pd.read_csv(
+    #     Path(__file__).parent / 'data' / 'assets' / 'testset_featurized_nka.csv', parse_dates=['start', 'stop']
+    # )
+    # print(df['fin_study_id'])
+    viewConfLeadingUpToEpisode(pd.read_csv('withConfidence_survival20_dcph.csv', parse_dates=['time'], dtype={'patient_id': str}), subsrc='dcph')
+    viewConfLeadingUpToEpisode(pd.read_csv('withConfidence_survival20_cph.csv' , parse_dates=['time'], dtype={'patient_id': str}), subsrc='cph')
+    viewConfLeadingUpToEpisode(pd.read_csv('withConfidence_survival20_rsf.csv' , parse_dates=['time'], dtype={'patient_id': str}), subsrc='rsf')
+    # df['fin_study_id'] = df['fin_study_id'].apply(int)
+    # confident_incorrects = df[(df['afib_confidence'] > .9) & (df['label'].isin(['SINUS', 'OTHER']))]
+    # confident_correct_afibs = df[(df['afib_confidence'] > .5) & (df['label'].isin(['ATRIAL_FIBRILLATION']))]
+    # confident_correct_nonAfibs = df[(df['afib_confidence'] < .5) & (df['label'].isin(['SINUS', 'OTHER']))]
+    # ### Plot 3 features
+    # features = ['b2b_var', 'b2b_std', 'hrv_hfd']
+    # fig = plt.figure()
+    # ax = plt.axes(projection='3d')
+
+    # print(len(confident_correct_afibs) + len(confident_incorrects) + len(confident_correct_nonAfibs), len(df))
+    # lm, heuristicWeights = lmHeuristicImportances()
+    # viewSegments(confident_incorrects, dst=Path('/home/rkaufman/workspace/afib_detection/results/assets/confident_incorrects_evalset'), labelmodel=lm, heuristicWeights=heuristicWeights)
     # df_trainset = pd.read_csv(
     #     Path(__file__).parent / 'data' / 'assets' / 'trainset_featurized.csv',
     #     parse_dates=['start', 'stop']
@@ -531,24 +733,23 @@ if __name__ == '__main__':
     #     df_insane,
     #     Path('/home/rkaufman/workspace/afib_detection/results/assets/insane_feature_analysis_testset')
     # )
-    # lmHeuristicImportances()
-    featsAndCutoffs = [
-        ('b2b_range', 5),
-        ('b2b_std', 5),
-        ('b2b_var', .05),
-        ('b2b_iqr', 6),
-        ('pnn20', .80),
-        ('pnn50', .55)
-    ]
-    df = pd.read_csv('./data/assets/5000_featurized_nk.csv', parse_dates=['start', 'stop'])
+    # featsAndCutoffs = [
+    #     ('b2b_range', 5),
+    #     ('b2b_std', 5),
+    #     ('b2b_var', .05),
+    #     ('b2b_iqr', 6),
+    #     ('pnn20', .80),
+    #     ('pnn50', .55)
+    # ]
+    # df = pd.read_csv('./data/assets/5000_featurized_nk.csv', parse_dates=['start', 'stop'])
     # getSamplesFromPercentile(df, 'b2b_iqr', 90)
     # getSamplesFromPercentile(df, 'b2b_iqr', 95)
     # getSamplesFromPercentile(df, 'b2b_range', 90)
     # getSamplesFromPercentile(df, 'b2b_range', 95)
-    getSamplesFromPercentile(df, 'b2b_range', 99, 10)
-    getSamplesFromPercentile(df, 'b2b_iqr', 99, 10)
-    getSamplesFromPercentile(df, 'b2b_range', 97)
-    getSamplesFromPercentile(df, 'b2b_iqr', 97)
+    # getSamplesFromPercentile(df, 'b2b_range', 99, 10)
+    # getSamplesFromPercentile(df, 'b2b_iqr', 99, 10)
+    # getSamplesFromPercentile(df, 'b2b_range', 97)
+    # getSamplesFromPercentile(df, 'b2b_iqr', 97)
     # # df = pd.read_csv('./data/assets/trainset_featurized.csv')
     # for feat, cutoff in featsAndCutoffs:
     #     cdfForFeature(df, feat, cutoff)

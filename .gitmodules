@@ -1,3 +1,6 @@
 [submodule "model/df4tsc"]
 	path = model/df4tsc
 	url = https://github.com/hfawaz/dl-4-tsc.git
+[submodule "model/auton-survival"]
+	path = model/auton-survival
+	url = https://github.com/autonlab/auton-survival.git

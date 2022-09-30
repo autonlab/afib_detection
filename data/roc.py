@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from itertools import cycle
 from sklearn.metrics import auc, roc_auc_score, roc_curve
 
-def roc(y_test, y_score, title, posLabel="ATRIAL_FIBRILLATION"):
+def roc(y_test, y_score, title, posLabel="ATRIAL_FIBRILLATION", dstTitle='roc.png'):
 
     lw = 2 #line width
     plt.figure()
@@ -39,7 +39,7 @@ def roc(y_test, y_score, title, posLabel="ATRIAL_FIBRILLATION"):
     plt.title(title)
     plt.legend(loc='lower right')
     plt.savefig(
-        '/home/rkaufman/workspace/afib_detection/results/assets/roc.png'
+        '/home/rkaufman/workspace/afib_detection/results/assets/' + dstTitle
     )
 
 

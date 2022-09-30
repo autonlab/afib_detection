@@ -1,7 +1,9 @@
 # rawDataFile: 'trainset_10000_featurized_withfilter.csv'
 # featurizedDataOutput: 'trainset_featurized_nk.csv'
-rawDataFile: '1000_segments.csv'
-featurizedDataOutput: '1000_segments_featurized.csv'
+rawDataFile: 'final_annotations.csv'
+featurizedDataOutput: 'final_annotations_featurized_nk.csv'
+# rawDataFile: '1000_segments.csv'
+# featurizedDataOutput: '1000_segments_featurized.csv'
 # rawDataFile: '5000_segments.csv'
 # featurizedDataOutput: '5000_segments_featurized.csv'
 # rawDataFile: 'evalset_parsed.csv'
@@ -12,30 +14,31 @@ finSearchDirectory: '/home/rkaufman/workspace/remote'
 cacheDirectory: '/home/rkaufman/workspace/afib_detection/data/assets/cache'
 #finSearchDirectory: '/home/romman/workspace/remote'
 features_nk:
-   - 'b2b_var'
-   - 'b2b_iqr'
-   - 'b2b_range'
-   - 'b2b_std'
-   - 'hrv_sd1'
-   - 'hrv_sd2'
-   - 'hrv_sd1sd2'
-   - 'ecg_rate_mean'
-   - 'hrv_pnn20'
-   - 'hrv_rmssd'
-   - 'hrv_pnn50'
-   - 'hrv_sdnn'
-   - 'hrv_sdsd'
-   - 'hrv_lf'
-   - 'hrv_hf'
-   - 'hrv_lfhf'
-   - 'hrv_sampen'
-   - 'hrv_shanen'
-   - 'hrv_apen'
-   - 'hrv_hfd'
-   - 'hopkins_statistic'
-   - 'max_sil_score'
-   - 'sse_1_clusters'
-   - 'sse_2_clusters'
+   - 'b2b_var'    # coefficient of variation (std / mean) of R peak to R peak intervals for segment
+   - 'b2b_iqr'    # interquartile range of "
+   - 'b2b_range'  # range of "
+   - 'b2b_std'    # std deviation of "
+   - 'hrv_sd1'    # std deviation of RR_n, RR_{n+1} plot projected on line perpendicular to identity line (see [here](https://www.researchgate.net/figure/The-Poincare-plot-SD1-and-SD2-standard-deviations-of-the-scattergram_fig1_290416554))
+   - 'hrv_sd2'    # std deviation of RR_n, RR_{n+1} plot projected on identity line (see above)
+   - 'hrv_sd1sd2' # sd1 / sd2
+   - 'ecg_rate_mean' # bpm
+   - 'hrv_pnn20'     # percentage of NN intervals that are more than 20% different than their neighbor
+   - 'hrv_pnn50'     # " 50% "
+   - 'hrv_rmssd'     # square-root of   sum of successive differences between adjacent RR intervals
+   - 'hrv_sdsd'      # std deviation of "
+   - 'hrv_sdnn'      # std deviation of NN intervals
+   - 'hrv_lf'        # power in low frequency band (range of .04hz - .15hz) of RR intervals
+   - 'hrv_hf'        # power in high frequency band (range of .15hz - .4hz) of RR intervals
+   - 'hrv_lfhf'      # lf / hf
+   - 'hrv_sampen'    # sample entropy of RR intervals
+   - 'hrv_shanen'    # shannon of "
+   - 'hrv_apen'      # approximate of "
+   - 'hrv_hfd'       # higuchi fractal dimension of "
+   - 'hopkins_statistic' # a measurement of the clusterability of RR intervals (see wiki)
+   - 'max_sil_score'     # maximum silhouette score out of k-means clustering of RR_n, RR_{n+1} pairs, with k taking values in 2 through 11 inclusive (see towards data science for good description of silhouette score)
+   - 'sse_1_clusters'    # sum of squared errors for 1-mean cluster fitted to RR_n, RR_{n+1} pairs
+   - 'sse_2_clusters'    # sum of squared errors for 2-mean cluster fitted to "
+   - 'sse_diff'          # sse_1_clusters - sse_2_clusters, to capture how much better two clusters capture RR interval pairs than a single cluster
 features:
    - 'b2b_var'
    - 'b2b_iqr'

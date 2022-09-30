@@ -111,9 +111,12 @@ def featurize_longertimewindow(dataSlice, samplerate):
     except:
         return None
 
-def featurize_longertimewindow_nk(dataSlice, samplerate):
+def featurize_longertimewindow_nk(dataSlice, samplerate, processedSignals=None):
     try:
-        sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
+        if (type(processedSignals) == type(None)):
+            sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
+        else:
+            sigs = processedSignals
         measures = ecg_analyze(sigs, sampling_rate=samplerate)
         sigs.columns = sigs.columns.str.lower()
         measures.columns = measures.columns.str.lower()
@@ -127,8 +130,8 @@ def featurize_longertimewindow_nk(dataSlice, samplerate):
             features[feat] = m[feat][0] if isinstance(m[feat][0], float) else None
         return features
     except Exception:
-        return logging.exception('featurize_nk longer time window')
-
+        logging.exception('featurize_nk longer time window')
+        return None
 def getRRIntervalStatistics(rrIntervals):
     #first, make rr, rr_{n+1} pairs
     rrIntervalPairs = list(zip(rrIntervals[:-1], rrIntervals[1:]))
@@ -143,7 +146,8 @@ def getRRIntervalStatistics(rrIntervals):
         'hopkins_statistic': hopkinsStat,
         'max_sil_score': maxSilScore,
         'sse_1_clusters': sse_1,
-        'sse_2_clusters': sse_2
+        'sse_2_clusters': sse_2,
+        'sse_diff': sse_1 - sse_2
     }
 
 #implemented by Dr. Rooney
@@ -187,7 +191,7 @@ def featurize(dataSlice, samplerate):
     except:
         return None
 
-def featurize_nk(dataSlice, samplerate):
+def featurize_nk(dataSlice, samplerate, sendProcessed=False):
     try:
         sigs, info = ecg_process(dataSlice, sampling_rate=samplerate)
         m_nk = ecg_analyze(sigs, sampling_rate=samplerate, withhrv=False)
@@ -201,9 +205,16 @@ def featurize_nk(dataSlice, samplerate):
         nkFeatsToKeep = ['ecg_rate_mean', 'hrv_rmssd', 'hrv_sdnn', 'hrv_sdsd']
         for feat in nkFeatsToKeep:
             features[feat] = m_nk[feat][0] if isinstance(m_nk[feat][0], float) else None
-        return features
+        if (sendProcessed):
+            return features, sigs
+        else:
+            return features
     except Exception:
-        return logging.exception('featurize_nk')
+        logging.exception('featurize_nk')
+        if (sendProcessed):
+            return None, None
+        else:
+            return None
 
 def featurize_2(dataSlice, samplerate):
     detrended = hp.remove_baseline_wander(dataSlice, samplerate)

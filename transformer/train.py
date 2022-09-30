@@ -55,7 +55,7 @@ data_dir = path.join(getcwd(),'physionet.org/files/challenge-2017/1.0.0')
 
 LABEL_CODE = {'N': 0,  # normal
               'A': 1, # afib
-              'O': 2, # other rhythm
+              'O': 0, # other rhythm
               '~': 3} # noisy
 
 data = []
@@ -73,6 +73,7 @@ for fname, folder, label in data:
     cntr+=1
     x = 1.*scipy.io.loadmat(fname)['val'].T
     if x.shape[0]<SAMPLING_FREQUENCY*10: continue
+    if label == '~': continue
     x = model.transform(x, 5, 20, SAMPLING_FREQUENCY, T=10, lrc='c')
     Xall.append(x)
     Yall.append(LABEL_CODE[label])

@@ -11,7 +11,6 @@ import pytz
 from tqdm import tqdm
 
 
-
 def identifyEventsForFIN(fin: int, searchDirectory: Path, dst: Path = Path('./')):
     """Given fin and directory within to find its signal, returns all events present as well as sufficient statistics and features computed
 

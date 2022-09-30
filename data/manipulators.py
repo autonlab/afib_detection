@@ -14,7 +14,9 @@ from tqdm import tqdm
 from . import utilities as datautils
 
 def loadScaler():
-    return
+    with open(Path(__file__).parent / 'assets' / 'scaler_physionet.pkl', 'rb') as readfile:
+        scaler = pickle.load(readfile)
+    return scaler
 
 def applyScaler(df, featuresToScale, scaler):
     # print(df[featuresToScale])
@@ -25,10 +27,7 @@ def applyScaler(df, featuresToScale, scaler):
 from scipy.stats.mstats import winsorize
 def winsorizeDF(df, featuresToWinsorize):
     for feat in featuresToWinsorize:
-        if (feat == 'b2b_std' or feat == 'b2b_var'):
-            limits = [0, .18]
-        else:
-            limits = [0, .1]
+        limits = [.05, .05]
         df[feat] = winsorize(df[feat], limits=limits)
     return df
 def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
@@ -45,10 +44,12 @@ def computeAndApplyScaler(df, featuresToScale, scalerType="standard"):
     else:
         raise ValueError(f'scalerType [{scalerType}] unsupported!')
     df[featuresToScale] = scaler.fit_transform(df[featuresToScale])
+    # with open(Path(__file__).parent / 'assets' / 'scaler_physionet.pkl', 'wb') as writefile:
+    #     pickle.dump(scaler, writefile)
     return df, scaler
 
-def applySplits(df, prespecifiedTestSet=None):
-    """Split given dataframe into train and test sets, either by fin_study_id or given prespecified test entries
+def applySplits(df, prespecifiedTestSet=None, test_size=.2, group_identifier='fin_study_id'):
+    """Split given dataframe into train and test sets, either by group_identifier or given prespecified test entries
 
     Args:
         df (pd.DataFrame): dataframe to split 
@@ -58,11 +59,11 @@ def applySplits(df, prespecifiedTestSet=None):
         tuple(pd.DataFrame, pd.DataFrame): trainset, testset
     """
     if (prespecifiedTestSet is None):
-        trainIndices, testIndices = next(GroupShuffleSplit(n_splits=1, test_size=.2, random_state=7).split(df, groups=df['fin_study_id']))
+        trainIndices, testIndices = next(GroupShuffleSplit(n_splits=1, test_size=.2, random_state=7).split(df, groups=df[group_identifier]))
         trainset, testset = df.iloc[trainIndices], df.iloc[testIndices]
     else:
-        trainset = df[~df['fin_study_id'].isin(prespecifiedTestSet)]
-        testset = df[df['fin_study_id'].isin(prespecifiedTestSet)]
+        trainset = df[~df[group_identifier].isin(prespecifiedTestSet)]
+        testset = df[df[group_identifier].isin(prespecifiedTestSet)]
     return trainset, testset
 
 def oversample(df, classColumn, samplingLikelihoodColumn):
