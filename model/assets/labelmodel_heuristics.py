@@ -26,7 +26,7 @@ ATRIAL_FIBRILLATION = 0
 SINUS = 1
 # OTHER = SINUS
 OTHER = 2 # depending on 3-class or binary problem choice
-# physionetRF = None
+physionetRF = None
 # scaler = None
 
 numberToLabelMap = {

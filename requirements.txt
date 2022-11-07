@@ -47,7 +47,6 @@ networkx==2.6.3
 neurokit2==0.1.7
 nolds==0.5.2
 numba==0.54.1
-numpy<1.20.0
 oauthlib==3.2.0
 opencv-python==4.5.5.64
 opt-einsum==3.3.0
@@ -83,7 +82,6 @@ Shapely==1.8.1.post1
 shortuuid==1.0.8
 six==1.16.0
 sklearn==0.0
-snorkel==0.9.8
 spectrum==0.8.1
 stack-data==0.2.0
 tensorboard==2.8.0
