@@ -26,7 +26,7 @@ ATRIAL_FIBRILLATION = 0
 SINUS = 1
 # OTHER = SINUS
 OTHER = 2 # depending on 3-class or binary problem choice
-# physionetRF = None
+physionetRF = None
 # scaler = None
 
 numberToLabelMap = {
@@ -151,12 +151,14 @@ def sse_diff_afib(sseSingle, sseDouble):
         return ABSTAIN
 from data.manipulators import loadScaler, applyScaler
 from model.utilities import getModelConfig
+
+from pathlib import Path
 import pandas as pd
 def trainedPhysionet(features):
     global physionetRF, scaler
     if (physionetRF is None):
         print('once')
-        with open('./data/assets/physionet_rf.pkl', 'rb') as readfile:
+        with open(Path(__file__).parent.parent.parent / 'data' / 'assets'/ 'physionet_rf.pkl', 'rb') as readfile:
             physionetRF = pickle.load(readfile)
         scaler = loadScaler()
     #load model
