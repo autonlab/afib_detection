@@ -450,6 +450,7 @@ import neurokit2 as nk
 # beforeMinutesOfInterest = [5, 10, 15, 30]
 beforeMinutesOfInterest = [30, 60]
 beforeMinutesOfInterest = [10, 15]
+beforeMinutesOfInterest = []
 def featurize_europace(df: pd.DataFrame, window_hold=False):
     #intervals back define the points of comparison for trend analysis
     # trendWindowLength_minutes = 3
@@ -485,7 +486,7 @@ def featurize_europace(df: pd.DataFrame, window_hold=False):
         if (type(longerFeats) == type(None)):
             continue
         features.update(longerFeats)
-        features, longerFeats = dict(), dict()
+        # features, longerFeats = dict(), dict()
         #, then the same for each beforeMinutesOfInterest
         initialTime = time
         features_new = None
@@ -507,8 +508,8 @@ def featurize_europace(df: pd.DataFrame, window_hold=False):
             features_new.update(longerFeats)
             for feat in features_new:
                 features[f"{feat}_{minutesBefore}"] = features_new[feat]
-        if (type(features_new) == type(None) or type(longerFeats) == type(None)):
-            continue
+        # if (type(features_new) == type(None) or type(longerFeats) == type(None)):
+        #     continue
         if (forgetSegment):
             forgottenSegments += 1
             # case where point is too near to beginning of signal to featurize prior trends
@@ -527,27 +528,8 @@ def featurize_europace(df: pd.DataFrame, window_hold=False):
     return pd.DataFrame(dfDict)
 
 if __name__ == '__main__':
-    # df = pd.read_csv(str(Path(__file__).parent / 'data/assets/europace' / 'afib_predictor_training_times.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
-    # df = pd.read_csv(str(Path(__file__).parent /  'afib_predictor_additional_negatives.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
-    df = pd.read_csv(str(Path(__file__).parent /  'modded_predictor_data.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
-    # df = pd.read_csv(str(Path(__file__).parent /  'afib_episode_samples_30.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
-    # df = pd.read_csv(str(Path(__file__).parent /  'preceding_afib_episodes.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
-    # featurize_europace(df)
-    # df = df[:1000:5]
-    res = Parallel(n_jobs=7)(delayed(featurize_europace)(group) for id, group in df.groupby('patient_id'))
+    df = pd.read_csv(str(Path(__file__).parent /  'europace_everybody_5min.csv'), parse_dates=['time', 'basetime'], dtype={'patient_id': str})
+    res = Parallel(n_jobs=8)(delayed(featurize_europace)(group) for id, group in df.groupby('patient_id'))
     concatenated = pd.concat(res)
-    concatenated.to_csv('featurized_afib_predictor_data_lengthened.csv', index=False)
+    concatenated.to_csv('featurized_all_5min.csv', index=False)
     print('SUCCESS')
-    # import warnings
-    # warnings.filterwarnings("ignore")
-
-    # from pstats import SortKey
-    # import cProfile
-    # featurizeOutput = datautils.getDataConfig().featurizedDataOutput
-    # featurize_physionet()
-    # print(f'Will save profile results to {featurizeOutput}')
-    # cProfile.run("featurize()", Path(__file__).parent / 'results' / 'profiles' / f'{featurizeOutput[:-4]}_numba.prof', sort=SortKey.CUMULATIVE)
-    # cProfile.run("featurize_parallel(load=True)", Path(__file__).parent / 'results' / 'profiles' / f'featurizeRun2_{featurizeOutput}.prof', sort=SortKey.CUMULATIVE)
-    # featurize()
-    # featurize_parallel(load=False)
-    # featurize_parallel(src='5000_segments.csv', dst='5000_featurized_nk.csv', load=False)

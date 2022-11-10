@@ -7,15 +7,16 @@ import pickle
 from scipy.stats.mstats import winsorize
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from model.df4tsc.resnet import Classifier_RESNET
 
 import random
 
-import data.manipulators as dm
-import data.utilities as du
 from model.labelmodel import LabelModelCustom
 from snorkel.labeling.model import LabelModel
+import data.manipulators as dm
+import data.utilities as du
 import model.utilities as mu
 
 def trainlm(modifyLabels=False) -> LabelModelCustom:
@@ -376,7 +377,7 @@ def trainPhysionet(model):
 
 from featurize import beforeMinutesOfInterest
 possibleFeatureSuffixes = [''] + [ f"_{m}" for m in beforeMinutesOfInterest ]
-allFeats = list()
+allFeats = list('tte')
 allFeatBases = mu.getModelConfig().features_nk
 for featBase in allFeatBases:
     for featureSuffix in possibleFeatureSuffixes:
@@ -432,7 +433,6 @@ def trainEuropaceBABY(df: pd.DataFrame, additionDF: pd.DataFrame):
 
 
     # Split into test and train
-    from sklearn.model_selection import train_test_split
     survivorIndices = df.index
     additionIndices = additionDF.index
     x_all, y_all = df[allFeats], df.index
@@ -534,39 +534,420 @@ def trainEuropaceBABY(df: pd.DataFrame, additionDF: pd.DataFrame):
         }
     return results
 
-def trainEuropaceSurvival(model_type: str = 'cph', acute=False):
-    dataConfig = du.getDataConfig()
+from data.roc import roc
+from sklearn.metrics import roc_auc_score
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit 
+from model.auton_survival.auton_survival import preprocessing
+from model.auton_survival.auton_survival.models import cph
+from model.auton_survival.auton_survival.metrics import survival_regression_metric
+from model.auton_survival.auton_survival.estimators import SurvivalModel
+
+import multiprocessing
+NUM_CORES = multiprocessing.cpu_count()-1
+def trainBinaryRFC(src='featurized_afib_predictor_data.csv', acute=False, lengthened=False, overlapping=False, spike=False):
+    # Set cache, collect config for run, collect data in (features, ttes, events) form
+    mem = Memory(du.getDataConfig().cacheDirectory)
+    loadData = mem.cache(loadDataInSurvivalFormat)
+    a, dfOG = loadData(src, lengthened=lengthened,acute=acute,filterCurrent=True, overlapping=overlapping,inDFForm=True)
+    # a, dfOG = loadData(lengthened=lengthened,acute=acute,filterCurrent=True, overlapping=overlapping,inDFForm=True)
+    features, ttes, events = a
+    # seconds --> minutes
+    ttes = np.array([tte.total_seconds()/60 for tte in ttes])
+
+    # HERE for faking data experiment
+    # ttes, events = np.array([random.random() * 120 for i in range(numSamples)]), [1 for i in range(numSamples)]
+    # events = np.array(events)
+
+    features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
+    labels = list()
+    E = list()
+    ids = list()
+    indices = list()
+    # for binary classifier, want option to filter out points immediately preceding afib start
+    numCensored, numNonCensored = 0, 0
+
+    # print(f'Num events: {sum(events)}')
+    # print(f'Numj censored: {len(events) - sum(events)}')
+    # ttes[ttes > H] = H
+    # print((ttes[100:110] > H) & (events[100:110] > 0), list(zip(events, ttes))[100:110])
+    # print(sum(events))
+    oldTTEs = ttes
+    H = 120
+    events = np.where(ttes > H, np.repeat(0, len(events)), events)
+    ttes = np.where(ttes > H, np.repeat(H, len(events)), ttes)
+    # print(ttes[oldTTEs > H][:10])
+    # print(max(ttes[events > 0]))
+    # print(sum(events))
+    # print(list(zip(events, ttes))[100:110])
+    # print(1/0)
+    for i, e in enumerate(events):
+        if ((e > 0)):
+            numNonCensored += 1
+
+            # if ((ttes[i]<30)): 
+            #     continue
+            labels.append(True)
+            E.append(e)
+            ids.append(dfOG['patient_id'][i])
+            indices.append(i)
+        else:
+            numCensored += 1
+            labels.append(False)
+            E.append(e)
+            ids.append(dfOG['patient_id'][i])
+            indices.append(i)
+    events = np.array(E)
+    model = RandomForestClassifier(max_depth=10, random_state=55)
+    print(f'Num censored: {numCensored}')
+    print(f'Num non censored: {numNonCensored}')
+
+    #split by patient
+    splitter = GroupShuffleSplit(test_size=.25, n_splits=2, random_state = 11)
+    trainInds, testInds = next(splitter.split(indices, groups=ids))
+    labels=np.array(labels)
+    trainData, testData, trainLabels, testLabels = features.iloc[trainInds, :], features.iloc[testInds, :], labels[trainInds], labels[testInds]     # inds = np.array([i for i in range(numSamples)])
+    # split = splitter.split(inds, groups=inds)
+    model.fit(trainData, trainLabels)
+    modelProbabilities = model.predict_proba(testData)
+    print(roc_auc_score(testLabels, modelProbabilities[:,1]))
+    showPerms = False
+    if (showPerms):
+        piResults = permutation_importance(model, testData, testLabels, n_jobs=NUM_CORES)
+        importances = piResults.importances_mean
+        importancesWithTitles = list()
+        for i, feat in enumerate(features.columns):
+            importancesWithTitles.append((feat, importances[i]))
+            print(feat, importances[i])
+        importancesWithTitles.sort(key=lambda x: x[1], reverse=True)
+        print(importancesWithTitles[:6])
+
+def survivalExperiment_spiked(model_type, culled=False):
+    # load features, ttes, events
+    mem = Memory(du.getDataConfig().cacheDirectory)
+    loadData = mem.cache(loadDataInSurvivalFormat)
+    data, df = loadData(acute=True, inDFForm=True)
+
+    features, ttes, events = data
+    ttes = np.array([tte.total_seconds()/60 for tte in ttes])
+
+    # scale and transform data
+    if (culled):
+        newCols = ['hrv_sd2_5', 'hrv_sd2_10', 'hrv_sd2_15', 'hrv_sd2', 'hrv_sdnn_5', 'hrv_pnn20_30', 'hrv_sd1', 'hrv_sdsd', 'hrv_pnn20_5', 'b2b_var', 'b2b_iqr']
+        features = features[newCols]
+    #spike
+    moddedTTEs = list()
+    for i, tte in enumerate(ttes):
+        if events[i] > 0:
+            moddedTTEs.append(tte)
+        else:
+            moddedTTEs.append(200)
+    features['ttes'] = moddedTTEs
+    features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
+
+    #train, see results
+    splitter = GroupShuffleSplit(test_size=.25, n_splits=2, random_state = 7)
+    split = splitter.split(df.index, groups=df['patient_id'])
+    # inds = np.array([i for i in range(numSamples)])
+    # split = splitter.split(inds, groups=inds)
+    train_inds, test_inds = next(split)
+    print(df['patient_id'][train_inds], df['patient_id'][test_inds])
+    indices_train, indices_test = train_inds, test_inds
+    x_train, x_test, tte_train, tte_test, e_train, e_test = features.iloc[train_inds, :], features.iloc[test_inds, :], ttes[train_inds], ttes[test_inds], events[train_inds], events[test_inds]
+
+    outcomes_train = pd.DataFrame({
+        'time': tte_train,
+        'event': e_train
+    })
+    outcomes = pd.DataFrame({
+        'time': tte_test,
+        'event': e_test
+    })
+
+    together = x_train.join(outcomes_train)
+    together.replace([np.inf, -np.inf], np.nan, inplace=True)
+    together.dropna(inplace=True)
+    outcomes_train = together[['time', 'event']]
+    x_train = together.drop(columns=['time', 'event'])
+
+    if (model_type == 'dcph'):
+        model = SurvivalModel(model_type, layers=[150], random_seed=7)
+        # layers is of form [neurons, ]
+    else:
+        model = SurvivalModel(model_type, random_seed=7)
+    model.fit(x_train, outcomes_train)
+    times = [5, 10, 20, 30, 60, 90]
+    preds = model.predict_risk(x_test, times)
+
+    # Compute Brier Score, Integrated Brier Score
+    # Area Under ROC Curve and Time Dependent Concordance Index
+    metrics = ['brs', 'ibs', 'auc', 'ctd']
+    from model.auton_survival.examples.estimators_demo_utils import plot_performance_metrics
+    results = dict()
+    outcomes_train.dropna(inplace=True);outcomes.dropna(inplace=True)
+    results['AUC'] = survival_regression_metric(metric='auc', outcomes_train=outcomes_train,
+                                    outcomes=outcomes, predictions=preds,
+                                    times=times)
+    results['Brier Score'] = survival_regression_metric(metric='brs', outcomes_train=outcomes_train,
+                                    outcomes=outcomes, predictions=preds,
+                                    times=times)
+    results['Concordance Index'] = survival_regression_metric(metric='ctd', outcomes_train=outcomes_train,
+                                    outcomes=outcomes, predictions=preds,
+                                    times=times)
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 6))
+    plot_performance_metrics(results, times)
+    plt.savefig(f'./results/assets/survival/spiked/{model_type.upper()}_results{"_culled" if culled else ""}.png')
+    plt.clf()
+    if (model_type=='cph'): #only cph has feature coefficients
+        preds = model.predict_risk(features, [15])
+        coefs: pd.Series = model._model.params_.sort_values()
+        names = coefs.index
+        coefs = coefs.to_numpy()
+        cis = model._model.confidence_intervals_
+        err = (cis['95% upper-bound'] - cis['95% lower-bound'])/2
+        y = np.arange(0, len(names))
+        fig, ax = plt.subplots()
+        ax.errorbar(coefs, y, xerr=err, fmt='s', mfc='white', color='black', capsize=3, markeredgewidth=.8)
+        plt.xlim(-1.5, 1.5)
+        plt.yticks(y, names)
+        plt.vlines(0, 0, len(names)-1, linestyles='dashed', transform=ax.get_xaxis_transform(), color='black', linewidth=1)
+        plt.savefig(f'./results/assets/survival/spiked/{model_type.upper()}_forest_plot{"_culled" if culled else ""}.png', bbox_inches="tight")
+
+    # print(ps)
+    # first = ps.iloc[:6].index
+    # second = ps.iloc[-6:].index
+    # together = list(list(first)+list(second))
+    # print(f"5 lowest and 5 highest cph coefficients: {together}")
+    # print(score)
+    # use tte as a feature when training the model
+
+def trainSurvival(src, model_type: str = 'cph', culled=False, dst='startpoint'):
+    print(model_type)
+    # load features, ttes, events
+    mem = Memory(du.getDataConfig().cacheDirectory)
+    loadData = mem.cache(loadDataInSurvivalFormat)
+    data, df = loadData(src, overlapping=True, inDFForm=True, filterCurrent=True)
+    features, ttes, events = data
+    classBalance=False
+    if (classBalance):
+        newFeats, newTTEs, newEs, newDF = list(), list(), list(), list()
+        #only keep as many censored events as non-censored to avoid skewing our training data
+        for i, group in df.groupby('patient_id'):
+            eventsForPatient = events[group.index]
+            targetCensored = sum(eventsForPatient)
+
+            for i, event in zip(group.index, eventsForPatient):
+                def addToAll(j):
+                    newFeats.append(pd.DataFrame(features.iloc[j:j+1, :]))
+                    newTTEs.append(ttes[j])
+                    newEs.append(events[j])
+                    newDF.append(pd.DataFrame(df.iloc[j:j+1, :]))
+                if (event == 1):
+                    addToAll(i)
+                elif ((event == 0) and (targetCensored > 0)):
+                    addToAll(i)
+                    targetCensored -= 1
+        features, ttes, events, df = pd.concat(newFeats), np.array(newTTEs), np.array(newEs), pd.concat(newDF)
+        features.reset_index(inplace=True)
+        df.reset_index(inplace=True)
+
+            # print(len(group.index))
+            # numCensored = events[events.] 
+            # print(numCensored != None)
+            # for j, row in group.iterrows():
+
+            # print(group.index)
+            # for j in group.index:
+
+    numNonCensored, numCensored = sum(events > 0), sum(events == 0)
+    print(f'Num censored: {numCensored}')
+    print(f'Num non censored: {numNonCensored}')
+    # print(1/0)
+    ttes = np.array([tte.total_seconds()/60 for tte in ttes])
+    H = 60.0
+    print(ttes[ttes>H][:10])
+    print(events[ttes>H][:10])
+    oldTTEs = ttes
+    events = np.where(ttes > H, np.repeat(0, len(events)), events)
+    ttes = np.where(ttes > H, np.repeat(H, len(events)), ttes)
+    numNonCensored, numCensored = sum(events > 0), sum(events == 0)
+    print(f'Num censored: {numCensored}')
+    print(f'Num non censored: {numNonCensored}')
+    print(ttes[oldTTEs > H][:10])
+    print(events[oldTTEs > H][:10])
+
+    if (culled):
+        newCols = ['hrv_sd2', 'hrv_pnn20', 'hrv_sd1', 'b2b_var', 'b2b_iqr']
+        features = features[newCols]
+    # scale and transform data
+    features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
+
+    #train, see results
+    splitter = GroupShuffleSplit(test_size=.25, n_splits=2, random_state = 7)
+    split = splitter.split(df.index, groups=df['patient_id'])
+    train_inds, test_inds = next(split)
+    assert(len(set(df['patient_id'].iloc[train_inds]) - set(df['patient_id'].iloc[test_inds])) == len(set(df['patient_id'].iloc[train_inds])))
+    indices_train, indices_test = train_inds, test_inds
+    x_train, x_test, tte_train, tte_test, e_train, e_test = features.iloc[train_inds, :], features.iloc[test_inds, :], ttes[train_inds], ttes[test_inds], events[train_inds], events[test_inds]
+
+    outcomes_train = pd.DataFrame({
+        'time': tte_train,
+        'event': e_train
+    })
+    outcomes = pd.DataFrame({
+        'time': tte_test,
+        'event': e_test
+    })
+
+    #put feats, tte, events together so we can filter out nans from any of the three
+    together = x_train.join(outcomes_train)
+    together.replace([np.inf, -np.inf], np.nan, inplace=True)
+    together.dropna(inplace=True)
+
+    outcomes_train = together[['time', 'event']]
+    x_train = together.drop(columns=['time', 'event'])
+
+    if (model_type == 'dcph'):
+        model = SurvivalModel(model_type, layers=[150], random_seed=7)
+        # layers is of form [neurons, ]
+    else:
+        model = SurvivalModel(model_type, random_seed=7)
+    model.fit(x_train, outcomes_train)
+    times = [5, 10, 20, 30, 60, 90]
+    if (H <= 90):
+        times = [5, 10, 20, 30, 45]
+    risks = model.predict_risk(x_test, times)
+    survivals = model.predict_survival(x_test, times)
+
+    #print out number of positives and negatives in testset
+    outcomes = outcomes_train
+    nonCensored = outcomes[outcomes['event'] > 0]
+    censored = outcomes[~outcomes.index.isin(nonCensored.index)]
+    # print(len(nonCensored), len(outcomes))
+    # print(len(censored))
+
+    # Compute Brier Score, Integrated Brier Score
+    # Area Under ROC Curve and Time Dependent Concordance Index
+    metrics = ['brs', 'ibs', 'auc', 'ctd']
+    from model.auton_survival.examples.estimators_demo_utils import plot_performance_metrics
+    results = dict()
+    # outcomes_train.dropna(inplace=True);outcomes.dropna(inplace=True)
+    # print(survivals)
+    # print(outcomes['time'])
+    # print(len(survivals))
+    # print(len(x_test), len(outcomes['time']))
+    results['AUC'] = survival_regression_metric(metric='auc', outcomes_train=outcomes_train, 
+                                    outcomes=outcomes, predictions=survivals,
+                                    times=times)
+    results['Brier Score'] = survival_regression_metric(metric='brs', outcomes_train=outcomes_train, 
+                                    outcomes=outcomes, predictions=survivals,
+                                    times=times)
+    results['Concordance Index'] = survival_regression_metric(metric='ctd', outcomes_train=outcomes_train, 
+                                    outcomes=outcomes, predictions=survivals,
+                                    times=times)
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 6))
+    plot_performance_metrics(results, times)
+    plt.savefig(f'./results/assets/survival/{dst}/{model_type.upper()}_results{"_culled" if culled else ""}.png')
+    plt.clf()
+    if (model_type=='cph'): #only cph has feature coefficients
+        preds = model.predict_risk(features, [15])
+        coefs: pd.Series = model._model.params_.sort_values()
+        names = coefs.index
+        coefs = coefs.to_numpy()
+        cis = model._model.confidence_intervals_
+        err = (cis['95% upper-bound'] - cis['95% lower-bound'])/2
+        y = np.arange(0, len(names))
+        fig, ax = plt.subplots()
+        ax.errorbar(coefs, y, xerr=err, fmt='s', mfc='white', color='black', capsize=3, markeredgewidth=.8)
+        plt.xlim(-1.5, 1.5)
+        plt.yticks(y, names)
+        plt.vlines(0, 0, len(names)-1, linestyles='dashed', transform=ax.get_xaxis_transform(), color='black', linewidth=1)
+        plt.savefig(f'./results/assets/survival/{dst}/{model_type.upper()}_forest_plot{"_culled" if culled else ""}.png', bbox_inches="tight")
+    # return dictionary with whatever one might need for analysis
+
+def trainEuropaceSurvival(model_type: str = 'cph', acute=False, lengthened=False, spike=False):
     mem = Memory(dataConfig.cacheDirectory)
     loadData = mem.cache(loadDataInSurvivalFormat)
-    a, dfOG = loadData(acute=acute, inDFForm=True)
+
+    dataConfig = du.getDataConfig()
+    a, dfOG = loadData(lengthened=lengthened,acute=acute, inDFForm=True)
     features, ttes, events = a
     # features, ttes, events = loadData()
-    from sklearn.model_selection import train_test_split
-    from model.auton_survival.auton_survival import preprocessing
-    from model.auton_survival.auton_survival.models import cph
-    from model.auton_survival.auton_survival.metrics import survival_regression_metric
-    from model.auton_survival.auton_survival.estimators import SurvivalModel
-    # print(features)
-    # newCols = ['ecg_rate_mean_30', 'hrv_sd2_60', 'hrv_pnn50_30', 'hrv_pnn50_15', 'b2b_var_120', 'sse_1_clusters_30', 'hrv_pnn50_60', 'b2b_var_30', 'hrv_sd2_15', 'hrv_sdnn']
-    # newCols =['hrv_sdnn_30', 'hrv_sdnn_15', 'ecg_rate_mean', 'b2b_range_30', 'sse_1_clusters_15', 'hrv_sd2', 'hrv_pnn50_30', 'b2b_std_15', 'ecg_rate_mean_15', 'hrv_sd2_30', 'hrv_sdnn', 'b2b_std_30'] 
-    # newCols =['b2b_var', 'b2b_var_30', 'b2b_var_60', 'b2b_iqr', 'ecg_rate_mean_30', 'hrv_pnn50_60', 'sse_2_clusters_120', 'sse_diff', 'sse_diff_30', 'sse_diff_60', 'hrv_sdnn', 'hrv_sd2_15'] 
-    # newCols = ['b2b_std', 'hrv_sd2_60', 'ecg_rate_mean_60', 'b2b_var_30', 'hrv_sd1sd2_60', 'hrv_sdnn_15', 'sse_1_clusters_60', 'ecg_rate_mean_15', 'b2b_var', 'hrv_sd2', 'hrv_sd2_15', 'b2b_std_30']
-    # newCols = ['hrv_sdnn_10', 'b2b_std', 'hrv_sd2_5', 'ecg_rate_mean_10', 'hrv_sd2_30', 'hrv_sd2', 'hrv_sd2_15', 'b2b_var', 'hrv_sdnn_5', 'ecg_rate_mean_5', 'b2b_std_5', 'hrv_sdnn_30']
-    newCols = ['ecg_rate_mean', 'b2b_std_30', 'hrv_pnn50_5', 'hrv_sdsd_15', 'hrv_sd1_15', 'hrv_rmssd_15', 'hrv_pnn50', 'ecg_rate_mean_5', 'ecg_rate_mean_30', 'hrv_pnn20_5', 'hrv_sdnn_15', 'b2b_std']
-    features = features[newCols]
-    features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
-    # features.replace([np.inf, -np.inf], np.nan, inplace=True)
-    # features.dropna(inplace=True)
-    if (model_type == 'dcph'):
-        model = SurvivalModel(model_type, layers=[150], random_seed=62)
-    else:
-        model = SurvivalModel(model_type, random_seed=62)
 
-    # model = cph.DeepCoxPH(layers=[100])
-    # features = features.to_numpy(dtype=np.float64)
     ttes = np.array([tte.total_seconds()/60 for tte in ttes])
-    events = np.array(events)
-    x_train, x_test, tte_train, tte_test, e_train, e_test, indices_train, indices_test = train_test_split(features, ttes, events, dfOG.index,test_size=.2, random_state=25)
+
+    # ttes, events = np.array([random.random() * 120 for i in range(numSamples)]), [1 for i in range(numSamples)]
+    # events = np.array(events)
+    if (spike):
+        featTTEs = list()
+        # for i, tte in enumerate(ttes):
+        #     if events[i] > 0:
+        #         featTTEs.append(tte)
+        #     else:
+        #         featTTEs.append(random.choice([360, 420, 400]))
+        # features['ttes'] = featTTEs
+        features = pd.DataFrame({
+            'ttes': ttes
+        })
+        features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
+    else:
+        features: pd.DataFrame = preprocessing.Preprocessor().fit_transform(features, cat_feats=[], num_feats=list(features.columns))
+        labels = list()
+        events2 = list()
+        ids = list()
+        indices = list()
+        for i, e in enumerate(events):
+            if ((e > 0)):
+                # if ((ttes[i]>30)): 
+                #     continue
+                labels.append(True)
+                events2.append(e)
+                ids.append(dfOG['patient_id'][i])
+                indices.append(i)
+            else:
+                labels.append(False)
+                events2.append(e)
+                ids.append(dfOG['patient_id'][i])
+                indices.append(i)
+        events = np.array(events2)
+        model = RandomForestClassifier(max_depth=10, random_state=66)
+        i = int(len(features)*.75)
+        print(features.columns)
+        trainData, trainLabels = features.iloc[:i, :], labels[:i]
+        testData, testLabels = features.iloc[i:, :], labels[i:]
+        # fitModel = RandomForestClassifier(max_depth=5, n_estimators=1000, class_weight='balanced', random_state=66)
+        splitter = GroupShuffleSplit(test_size=.25, n_splits=2, random_state = 11)
+        trainInds, testInds = next(splitter.split(indices, groups=ids))
+        labels=np.array(labels)
+        trainData, testData, trainLabels, testLabels = features.iloc[trainInds, :], features.iloc[testInds, :], labels[trainInds], labels[testInds]     # inds = np.array([i for i in range(numSamples)])
+        # split = splitter.split(inds, groups=inds)
+        model.fit(trainData, trainLabels)
+        modelProbabilities = model.predict_proba(testData)
+        print(roc_auc_score(testLabels, modelProbabilities[:,1]))
+        print(1/0)
+    # for i in range(int(.15*numSamples // 1)):
+    #     events[i] = 0
+    # newCols = ['ecg_rate_mean_60', 'hrv_pnn20_60', 'hrv_shanen_30', 'hrv_sdnn', 'hrv_shanen', 'hrv_hf', 'ecg_rate_mean', 'hrv_sd2_30', 'max_sil_score_60', 'b2b_iqr_30', 'hrv_pnn20', 'hrv_sd2_60'] 
+    # features = features[newCols]
+    if (model_type == 'dcph'):
+        model = SurvivalModel(model_type, layers=[150], random_seed=7)
+        # layers is of form [neurons, ]
+    else:
+        model = SurvivalModel(model_type, random_seed=7)
+
+
+    splitter = GroupShuffleSplit(test_size=.25, n_splits=2, random_state = 7)
+    split = splitter.split(dfOG.index, groups=dfOG['patient_id'])
+    # inds = np.array([i for i in range(numSamples)])
+    # split = splitter.split(inds, groups=inds)
+    train_inds, test_inds = next(split)
+    print(train_inds, test_inds)
+    indices_train, indices_test = train_inds, test_inds
+    x_train, x_test, tte_train, tte_test, e_train, e_test = features.iloc[train_inds, :], features.iloc[test_inds, :], ttes[train_inds], ttes[test_inds], events[train_inds], events[test_inds]
+
     # print('yo')
     # print((len(events) - sum(events)) / 60)
     # print(sum(events) / 60)
@@ -581,41 +962,38 @@ def trainEuropaceSurvival(model_type: str = 'cph', acute=False):
     together = x_train.join(outcomes_train)
     together.replace([np.inf, -np.inf], np.nan, inplace=True)
     together.dropna(inplace=True)
-    model.fit(together.drop(columns=['time', 'event']), together[['time', 'event']], val_data=(x_test, outcomes))
-    times = [15, .5*60, 1.0*60, 2.0*60]
-    times = [10, 15, 20, 25, 30]
-    # times = [.5*60*60, 1*60*60, .75*60*60]
+    model.fit(together.drop(columns=['time', 'event']), together[['time', 'event']])
+    times = [5, 10, 20, 30, 60, 90]
     preds = model.predict_risk(x_test, times)
     # print(preds)
     # Compute Brier Score, Integrated Brier Score
     # Area Under ROC Curve and Time Dependent Concordance Index
     metrics = ['brs', 'ibs', 'auc', 'ctd']
-    # score = survival_regression_metric(metric='auc', outcomes_train=outcomes_train, 
-    #                                 outcomes=outcomes, predictions=preds,
-    #                                 times=times)
     from model.auton_survival.examples.estimators_demo_utils import plot_performance_metrics
     results = dict()
     outcomes_train.dropna(inplace=True);outcomes.dropna(inplace=True)
     results['AUC'] = survival_regression_metric(metric='auc', outcomes_train=outcomes_train, 
                                     outcomes=outcomes, predictions=preds,
                                     times=times)
+    print(results['AUC'])
     results['Brier Score'] = survival_regression_metric(metric='brs', outcomes_train=outcomes_train, 
                                     outcomes=outcomes, predictions=preds,
                                     times=times)
     results['Concordance Index'] = survival_regression_metric(metric='ctd', outcomes_train=outcomes_train, 
                                     outcomes=outcomes, predictions=preds,
                                     times=times)
+    print(results['Concordance Index'])
     import matplotlib.pyplot as plt
     plt.figure(figsize=(12, 4))
     plot_performance_metrics(results, times)
-    plt.savefig(f'./results/assets/survival_results_{model_type.upper()}{"_acute_culled" if acute else ""}.png')
+    plt.savefig(f'./results/assets/survival_results_{model_type.upper()}{"_lengthened_culled" if lengthened else ""}.png')
     plt.clf()
     print(model_type.upper())
-    preds = model.predict_risk(features, [20])
-    dfOG['model_confidence'] = preds[:,0]
-    dfOG['testset'] = dfOG.index.isin(indices_test)
-    dfOG['event'] = events
-    dfOG.to_csv(f'withConfidence_survival20_{model_type}.csv', index=False)
+    preds = model.predict_risk(features, [15])
+    # dfOG['model_confidence'] = preds[:,0]
+    # dfOG['testset'] = dfOG.index.isin(indices_test)
+    # dfOG['event'] = events
+    # dfOG.to_csv(f'withConfidence_survival20_{model_type}.csv', index=False)
     if (model_type == 'cph'):
         print('Plotting cph coefficients...')
         dst = './results/assets/cph_confidences.png'
@@ -636,22 +1014,14 @@ def trainEuropaceSurvival(model_type: str = 'cph', acute=False):
 
 
 if __name__ == "__main__":
-
-    allLabels = [f"afib_in_{start}_to_{stop}" for start, stop in timeIntervals]
-    dtypeDict = {
-        'patient_id': str
-    }
-    for label in allLabels:
-        dtypeDict[label] = bool
-    # trainEuropaceBABY(pd.read_csv('featurized_afib_predictor_data.csv', parse_dates=['time', 'basetime'], dtype=dtypeDict))
-    # trainEuropaceBABY(pd.read_csv('featurized_afib_preceding_times.csv', parse_dates=['time', 'basetime'], dtype=dtypeDict))
-    # trainEuropaceSurvival('dsm')
-    trainEuropaceSurvival('cph', acute=True)
-    trainEuropaceSurvival('dcph', acute=True)
-    trainEuropaceSurvival('rsf', acute=True)
-    # trainlm(modifyLabels=True)
-    # trainPhysionet('RandomForestSK')
-    # train(model='LabelModel', usesplits=False)
-    # train(usesplits=False)
-    # lrModel, cacheddata = train(usesplits=False, model="LogisticRegression", verbose=False)
-    # rfModel = train(usesplits=False, model="RandomForestSK", verbose=False)
+    trainBinaryRFC(overlapping=True)
+    trainBinaryRFC(src='modded_featurization.csv', overlapping=True)
+    trainSurvival('modded_featurization', 'cph', culled=False,  dst='H-120')
+    # trainSurvival('rsf', culled=False,  dst='H-120')
+    # trainSurvival('dcph', culled=False, dst='H-120')
+    # survivalExperiment_spiked('cph')
+    # survivalExperiment_spiked('rsf')
+    # survivalExperiment_spiked('dcph')
+    # trainEuropaceSurvival('cph', lengthened=True, spike=False)
+    # trainEuropaceSurvival('dcph', lengthened=True, spike=False)
+    # trainEuropaceSurvival('rsf',  lengthened=True, spike=False)

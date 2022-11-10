@@ -1,4 +1,8 @@
 # afib_detection
+## Prediction
+see `./notebooks` directory
+
+## Detection
 ## Data store
 Once logged into lab server navigate to `/zfsmladi/originals`, and within you'll find a large store of h5 files.
 Find the functions you can use to pull, read, and manipulate these files within the `/data` directory as seen below.

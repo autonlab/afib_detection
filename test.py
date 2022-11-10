@@ -9,6 +9,9 @@ from itertools import cycle
 import model.utilities as mu
 from train import train, trainPhysionet, trainEuropaceBABY
 
+
+def applyModelToPatient(src='featurized_all_5min.csv')
+    pass
 def showResults(trainingResults: dict, title=None, posLabel=None, feature_importance=True):
     resultantModel = trainingResults['m']
     newDecisionThreshold = .5
@@ -62,14 +65,12 @@ if __name__ == "__main__":
     additionData['preceding_afib'] = [True for i in range(len(additionData))]
     res = trainEuropaceBABY(trainData, additionData)
     for learningTask, learningTaskData in res.items():
-        # showResults(learningTaskData, title=learningTask, feature_importance=False)
-        trainData[f"{learningTask}_confidence"] = [None for i in range(len(trainData))]
-        trainData[f"{learningTask}_confidence"][learningTaskData['allDataIdentifiers']] = learningTaskData['allDataPredProbabilities'][:,1]
-        additionData[f"{learningTask}_confidence"] = [None for i in range(len(additionData))]
-        additionData[f"{learningTask}_confidence"][learningTaskData['additionIdentifiers']] = learningTaskData['additionPredProbabilities'][:,1]
-    # combined = pd.concat([trainData, additionData], axis=0, ignore_index=True)
-    # combined.to_csv("all_predictor_data_bucket.csv", index=False)
-    additionData.to_csv('preceding_afib_episodes_3moremaximal_withmodelconf.csv')
+        showResults(learningTaskData, title=learningTask, feature_importance=False)
+    #     trainData[f"{learningTask}_confidence"] = [None for i in range(len(trainData))]
+    #     trainData[f"{learningTask}_confidence"][learningTaskData['allDataIdentifiers']] = learningTaskData['allDataPredProbabilities'][:,1]
+    #     additionData[f"{learningTask}_confidence"] = [None for i in range(len(additionData))]
+    #     additionData[f"{learningTask}_confidence"][learningTaskData['additionIdentifiers']] = learningTaskData['additionPredProbabilities'][:,1]
+    # additionData.to_csv('preceding_afib_episodes_3moremaximal_withmodelconf.csv')
     # features = ['b2b_iqr', 'hrv_pnn20', 'hrv_pnn50', 'hrv_shanen', 'sse_2_clusters', 'sse_diff', 'ecg_rate_mean']
     # features = ['b2b_range', 'b2b_var', 'sse_2_clusters', 'sse_1_clusters', 'hrv_pnn20', 'hrv_pnn50', 'hrv_shanen', 'ecg_rate_mean', 'hrv_sd1']
     # features = set(features) - set(['hfd', 'hrv_hf', 'hrv_lfhf', 'sd1', 'sample_entropy', 'max_sil_score', 'hrv_lf', 'b2b_var', 'rmssd', 'sd1/sd2', 'sd2', 'hopkins_statistic', 'b2b_std'])

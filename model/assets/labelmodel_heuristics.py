@@ -26,7 +26,7 @@ ATRIAL_FIBRILLATION = 0
 SINUS = 1
 # OTHER = SINUS
 OTHER = 2 # depending on 3-class or binary problem choice
-# physionetRF = None
+physionetRF = None
 # scaler = None
 
 numberToLabelMap = {
@@ -68,7 +68,7 @@ def get_vote_vector_nk( **kwargs):
         sse_afib_other(kwargs['sse_1_clusters']),
         sse_afib_sinus(kwargs['sse_1_clusters']),
         sse_diff_afib(kwargs['sse_1_clusters'], kwargs['sse_2_clusters']),
-        trainedPhysionet(kwargs)
+        # trainedPhysionet(kwargs)
         # mitbih_model_afib(kwargs['']),
         # mitbih_model_sinus(kwargs['']),
         # mitbih_model_other(kwargs[''])
