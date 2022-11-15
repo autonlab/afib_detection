@@ -1,13 +1,14 @@
 # afib_detection
-## Prediction
-see `./notebooks` directory
+## Data sets
+- [Long Term Atrial Fibrillation DB (ltafdb)](https://physionet.org/content/ltafdb/1.0.0/): 84 patients who have 'paroxysmal or sustained' atrial fibrillation, with lengthy recordings often lasting a day continuously. Annotated beats as well as rhythms.
+- [MIT-BIH Arrhythmia DB](https://physionet.org/content/mitdb/1.0.0/): 48 half-hour excertps from 47 patients, also annotated by beats as well as rhythms
+- MLADI Subset: Stratified sample (to maintain demographic distribution) from mladi store (sample of which can be found on lab servers under `/zfsmladi/originals`). No annotations save the ones we've collected ourselves.
 
-## Detection
-## Data store
-Once logged into lab server navigate to `/zfsmladi/originals`, and within you'll find a large store of h5 files.
+**MLADI Note**
+Once logged onto lab server navigate to `/zfsmladi/originals`, and within you'll find a large store of h5 files.
 Find the functions you can use to pull, read, and manipulate these files within the `/data` directory as seen below.
 
-**Note** If you'd like to read from remote data on your local machine check out our [faq repo](https://github.com/autonlab/auton-faqs/blob/main/howTos/how-to-ssh.md) in the **Mounting remote disks** section
+**General Note** If you'd like to read from remote data on your local machine check out our [faq repo](https://github.com/autonlab/auton-faqs/blob/main/howTos/how-to-ssh.md) in the **Mounting remote disks** section
 
 ## Dev setup
 ```
@@ -17,28 +18,36 @@ pip install -r requirements.txt
 ```
 
 ## Repository contents
-Below you'll see a directory overview with potential files of interest explained
+A directory overview with files of interest explained:
 ```
 .
-├── featurize.py
-├── train.py
-├── test.py
 ├── analysis.py
-├── requirements-dev.txt
-├── requirements.txt
+├── featurize.py
+├── train.py#code to train suite of models for detection and prediction tasks, should be split up into separate files
+├── test.py
 ├── data
-│   ├── assets                  # store for data worth remembering
+│   ├── assets                  # store for data worth caching
 │   ├── config.yml
 │   ├── computers.py            # data computation
+│   ├── nk_computers.py
 │   ├── manipulators.py         # data manipulation
 │   ├── stratified_sample.py    # functions for collecting segments from mladi store
 │   └── utilities.py            # utilities for finding and manipulating h5 source files
+├── detection
+│   └── application.py
+├── prediction
+│   └── loadData.py
 ├── model
 │   ├── config.yml
 │   ├── assets
-│   ├── labelmodel.py
+│   ├── auton_survival #git submodule
+│   ├── df4tsc #git submodule
 │   ├── mitbih.py
 │   └── utilities.py
-└── results
-    └── assets                  # storage for output plots/artifacts
+├── notebooks
+│   ├── pairwiseLFs.ipynb
+│   ├── restitching.ipynb #restitching ltafdb episodes at specified knit lengths
+│   └── rollingAverageFeaturization.ipynb #normalization by patient baselines - in progress
+├── requirements.txt
+└── README.md
 ```
