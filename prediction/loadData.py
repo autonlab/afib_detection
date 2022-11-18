@@ -1,13 +1,23 @@
 #parsing data from .atr, .dat files into signals, sample rates, and annotations
 import datetime as dt
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from typing import Tuple, Union, List
 import wfdb
 
-def getAllRecordIDs(europaceDownloadDir = Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> List[str]:
+def getAllRecordIDs(europaceDownloadDir = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> List[str]:
     return open(str(europaceDownloadDir / 'RECORDS'), 'r').read().splitlines()
+
+def getSlice(id: str, start: dt.datetime, stop: dt.datetime, src: Path = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> np.array:
+    record, _ = getRecordByID(id)
+    recordBaseTime: dt.datetime = record.base_datetime
+    samplingRate: int = record.fs
+
+    startIdx, endIdx = (start - recordBaseTime).total_seconds()*samplingRate, (stop - recordBaseTime).total_seconds()*samplingRate
+    return record.p_signal[startIdx:endIdx]
+
 
 def parse(src=Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europace'):
     searchDir = src / 'physionet.org/files/ltafdb/1.0.0/'
@@ -28,16 +38,16 @@ def parse(src=Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europac
         # print(ann.symbol)
         # print(ann.aux_note)
 
-def getRecordByID(id: str, searchDir: Path = Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
+def getRecordByID(id: str, searchDir: Path = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
     return wfdb.rdrecord( str(searchDir / id) ), wfdb.rdann( str(searchDir / id), 'atr')
 
-def getJustRecordByID(id: str, searchDir: Path = Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
+def getJustRecordByID(id: str, searchDir: Path = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
     return wfdb.rdrecord( str(searchDir / id) )
 
-def getHeaderById(id: str, searchDir: Path = Path(__file__).parent.parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
+def getHeaderById(id: str, searchDir: Path = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> Tuple[wfdb.Record, wfdb.Annotation]:
     return wfdb.rdheader( str(searchDir / id) )
 
-def getRhythmAnnotations(patientID: str, rhythmToCollect: str = '(AFIB', dst: Union[None, Path] = None) -> pd.DataFrame:
+def getRhythmAnnotations(patientID: str, rhythmToCollect: str = '(AFIB', dst: Union[None, Path] = None, searchDir: Path = Path(__file__).parent.parent / 'data' / 'assets' / 'europace/physionet.org/files/ltafdb/1.0.0/') -> pd.DataFrame:
     """Collect all the rhythm annotations of specified type for given patient, putting their start, stops, and patient id into dataframe
 
     Args:
