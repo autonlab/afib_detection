@@ -295,7 +295,7 @@ class Net(nn.Module):
             good[:,i] = (tte>t[i]) | (delta)
         return scores, labels, good
 
-    def PatientGeneralizationLoss(self,source, target)
+    def PatientGeneralizationLoss(self,source, target):
         src = self.cnn(source).mean(-2)
         tgt = self.cnn(target).mean(-2)
         return self.mmd(src, tgt)
@@ -306,9 +306,11 @@ class Net(nn.Module):
 
 print('Loading data...')
 
-data_path = path.join(getcwd(),'xybundle.pkl')
+# data_path = path.join(getcwd(),'xybundle.pkl')
+from bundle_data import knitBundles
+data, LABEL_CODE = knitBundles()
 
-data, LABEL_CODE = pickle.load(open(data_path,'rb'))
+# data, LABEL_CODE = pickle.load(open(data_path,'rb'))
 print('   load complete.')
 
 print('Preparing data...')

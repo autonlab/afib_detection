@@ -3,7 +3,7 @@ import numpy as np
 from os.path import join as pathjoin
 import pickle
 
-dir_ = 'physionet.org/files/ltafdb/1.0.0'
+dir_ = '../data/assets/europace/physionet.org/files/ltafdb/1.0.0'
 
 def TimeSince(rec,dir=dir_):
     '''
@@ -70,17 +70,34 @@ def TimeSince(rec,dir=dir_):
                 y[ idx, j+1] = t_since[idx]
                 delta[ idx, j+1] = True
     return x,y,np.array(i),delta
-
-if __name__ == '__main__':
-    Dat = {}
-    TypeDict = {}
-    cnt = 0
+def innerLoad(line):
+    dat = dict()
+    rec = line.rstrip()
+    print(rec)
+    x,y,i,delta = TimeSince(rec)
+    dat[rec] = (x,y,i,delta)
+    # cnt += 1
+    pickle.dump((dat,{}),open(f'./bundled/xybundle_{rec}.pkl','wb'))
+def knitBundles():
+    knitData, knitLabels = dict(), dict()
     for line in open(pathjoin(dir_,'RECORDS'),'r'):
         rec = line.rstrip()
-        x,y,i,delta = TimeSince(rec)
-        Dat[rec] = (x,y,i,delta)
-        cnt += 1
-        print(cnt)
-    pickle.dump((Dat,TypeDict),open('xybundle.pkl','wb'))
+        data, label_code =  pickle.load(open(f'./bundled/xybundle_{rec}.pkl', 'rb'))
+        knitData, knitLabels = {**knitData, **data}, {**knitLabels, **label_code}
+    return knitData, {'N': 3, 'AFIB': 0, 'VT': 6, 'AB': 4, 'SVTA': 8, 'T': 5, 'B': 7, 'SBR': 1, 'IVR': 2}
+
+from joblib import Parallel, delayed
+if __name__ == '__main__':
+    # Dat = {}
+    TypeDict = {'N': 3, 'AFIB': 0, 'VT': 6, 'AB': 4, 'SVTA': 8, 'T': 5, 'B': 7, 'SBR': 1, 'IVR': 2}
+    cnt = 0
+    Parallel(n_jobs=7)(delayed(innerLoad)(line) for line in open(pathjoin(dir_, 'RECORDS'), 'r'))
+    # for line in open(pathjoin(dir_,'RECORDS'),'r'):
+    #     rec = line.rstrip()
+    #     x,y,i,delta = TimeSince(rec)
+    #     Dat[rec] = (x,y,i,delta)
+    #     cnt += 1
+    #     print(cnt)
+    #     pickle.dump((Dat,TypeDict),open('xybundle.pkl','wb'))
 
 

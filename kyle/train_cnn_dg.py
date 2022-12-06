@@ -110,7 +110,7 @@ def PrepareData(tup,LABEL_CODE):
         return np.concatenate(xlist,1)
     dat_ = [(np.float32(stack(x[(i-start):i,:])),
              tte_ga[i-1],
-             delta_ga[i-1]) 
+             delta_ga[i-1])
              for i in np.arange(start,T,stride) if good[i]]
     return dat_
 
@@ -210,7 +210,7 @@ class CNNdetector(nn.Module):
 class Net(nn.Module):
     def __init__(self,input_shape,time_scale):
         super(Net, self).__init__()
-        
+
         n = 1 # number of mixture components
         self.time_scale = time_scale
         self.n = n
@@ -225,7 +225,7 @@ class Net(nn.Module):
         padding = 0
         dilation = 1
         self.cnn = CNNdetector(sequence_dim, hidden_dim, embed_dim, kernel_size, stride, padding, dilation)
-        
+
         self.mmd = MMD_loss()
 
         self.head = nn.Sequential(
@@ -262,7 +262,7 @@ class Net(nn.Module):
         if hasattr(t, "__len__"):
             lc = -(t[:,None]/scale)**shape
             lp = log_shape-log_scale+(shape-1.)*(torch.log(t+1e-2)[:,None]-log_scale)+lc
-        else: 
+        else:
             lc = -(t/scale)**shape
             lp = log_shape-log_scale+(shape-1.)*(log(t+1e-2)-log_scale)+lc
         lprob = torch.logsumexp(lp+log_w,1)
@@ -284,7 +284,7 @@ class Net(nn.Module):
         tte[tte>H] = H
         lprob, l1mcdf = self.log_probs(tte,a)
         return -( lprob*(1-censored)+l1mcdf*censored ).mean()
-    
+
     def ClassifierScores(self,tte,delta,a,t):
         N, M = len(tte), len(t)
         scores = np.empty((N,M))
@@ -308,13 +308,16 @@ class Net(nn.Module):
 
 print('Loading data...')
 
-data_path = path.join(getcwd(),'xybundle.pkl')
+# data_path = path.join(getcwd(),'xybundle.pkl')
 
-data, LABEL_CODE = pickle.load(open(data_path,'rb'))
+# data, LABEL_CODE = pickle.load(open(data_path,'rb'))
+from bundle_data import knitBundles
+data, LABEL_CODE = knitBundles()
+print(LABEL_CODE)
 print('   load complete.')
-
 print('Preparing data...')
 patients = np.array([k for k in data.keys()])
+# print(patients)
 idx = np.random.random(len(patients))>=0.5
 train_patients = patients[idx]
 test_patients = patients[~idx]
@@ -327,7 +330,7 @@ def y_categories(t,d):
     return -1
 
 train_data_y = sum([[y_categories(t,d) for x,t,d in dat] for dat in train_data],[])
-train_data_x = sum([[x for x,t,d in dat] for dat in train_data],[]) 
+train_data_x = sum([[x for x,t,d in dat] for dat in train_data],[])
 train_data_pat = np.repeat(np.arange(len(train_data)),[len(dat) for dat in train_data])
 train_data_x = [train_data_x[i] for i in range(len(train_data_x)) if train_data_y[i]!=-1]
 train_data_pat = [train_data_pat[i] for i in range(len(train_data_pat)) if train_data_y[i]!=-1]
@@ -350,7 +353,15 @@ print('   prep complete.')
 
 print('Creating model...')
 H = 2*60*60 # 2 hours
-dat_ = PrepareData(data[train_patients[0]],LABEL_CODE)
+dataEntry = data[train_patients[1]]
+print(len(dataEntry))
+print(f'X shape: {dataEntry[0].shape}')
+print(f'Y shape: {dataEntry[1].shape}')
+print(f'i shape: {dataEntry[2].shape}')
+print(f'd shape: {dataEntry[3].shape}')
+print(data[train_patients[1]])
+dat_ = PrepareData(data[train_patients[1]],LABEL_CODE)
+print(dat_)
 x,y,d = dat_[0]
 print(x.shape)
 model = Net(x.shape,H)
