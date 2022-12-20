@@ -321,8 +321,12 @@ patients = np.array([k for k in data.keys()])
 idx = np.random.random(len(patients))>=0.5
 train_patients = patients[idx]
 test_patients = patients[~idx]
-mlflow.log_metric('train_patients', train_patients)
-mlflow.log_metric('test_patients', test_patients)
+with open('test_patients.txt', 'w+') as writefile:
+    writefile.write('\n'.join(test_patients))
+with open('train_patients.txt', 'w+') as writefile:
+    writefile.write('\n'.join(train_patients))
+mlflow.log_artifact('train_patients.txt', 'train_patients')
+mlflow.log_artifact('test_patients.txt', 'test_patients')
 
 train_data = [PrepareData(data[pat],LABEL_CODE) for pat in train_patients]
 def y_categories(t,d):
