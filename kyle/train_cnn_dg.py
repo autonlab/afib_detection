@@ -84,7 +84,7 @@ def PrepareData(tup,LABEL_CODE):
     x,y,i,delta = tup
     w = 60*128 # 1 min window (3min x 60s x 128Hz)
     nlags = 3
-    lag_spacing = 1*60*128 # 15 min spacing
+    lag_spacing = 1*60*128 # 1 min spacing
     dilation = 1
     stride = 30*128 # 3 min stride (3min x 60s x 128Hz)
     T = x.shape[0]
@@ -296,6 +296,14 @@ class Net(nn.Module):
             labels[:,i] = tte>t[i]
             good[:,i] = (tte>t[i]) | (delta)
         return scores, labels, good
+
+    def _classifierScores(self, a, t):
+        N, M = len(a), len(t)
+        scores = np.empty((N,M))
+        for i in range(M):
+            _, l1mcdf = self.log_probs(t[i],a)
+            scores[:,i] = l1mcdf.cpu().numpy()
+        return scores
 
     def PatientGeneralizationLoss(self,source, target):
         src = self.cnn(source).mean(-2)
