@@ -321,6 +321,8 @@ patients = np.array([k for k in data.keys()])
 idx = np.random.random(len(patients))>=0.5
 train_patients = patients[idx]
 test_patients = patients[~idx]
+mlflow.log_metric('train_patients', train_patients)
+mlflow.log_metric('test_patients', test_patients)
 
 train_data = [PrepareData(data[pat],LABEL_CODE) for pat in train_patients]
 def y_categories(t,d):
@@ -353,14 +355,16 @@ print('   prep complete.')
 
 print('Creating model...')
 H = 2*60*60 # 2 hours
+'''
 dataEntry = data[train_patients[1]]
 print(len(dataEntry))
 print(f'X shape: {dataEntry[0].shape}')
 print(f'Y shape: {dataEntry[1].shape}')
 print(f'i shape: {dataEntry[2].shape}')
 print(f'd shape: {dataEntry[3].shape}')
-print(data[train_patients[1]])
-dat_ = PrepareData(data[train_patients[1]],LABEL_CODE)
+print(data[train_patients[0]])
+'''
+dat_ = PrepareData(data[train_patients[0]],LABEL_CODE)
 print(dat_)
 x,y,d = dat_[0]
 print(x.shape)
@@ -421,6 +425,7 @@ for epoch in range(5000):
                 eval_aucs[loader_name] = aucs
             if np.mean(eval_aucs["test"])>best_auc:
                 best_auc = np.mean(eval_aucs["test"])
+                torch.save(model.state_dict(), './bestModel.pt')
                 for i in range(len(t_eval)):
                     mlflow.log_metric("TrainAUC%i"%int(t_eval[i]/60), eval_aucs["train"][i])
                     mlflow.log_metric("TestAUC%i"%int(t_eval[i]/60), eval_aucs["test"][i])

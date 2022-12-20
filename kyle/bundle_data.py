@@ -3,7 +3,7 @@ import numpy as np
 from os.path import join as pathjoin
 import pickle
 
-dir_ = '../data/assets/europace/physionet.org/files/ltafdb/1.0.0'
+dir_ = '../data/assets/physionet.org/files/ltafdb/1.0.0'
 
 def TimeSince(rec,dir=dir_):
     '''
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     # Dat = {}
     TypeDict = {'N': 3, 'AFIB': 0, 'VT': 6, 'AB': 4, 'SVTA': 8, 'T': 5, 'B': 7, 'SBR': 1, 'IVR': 2}
     cnt = 0
-    Parallel(n_jobs=7)(delayed(innerLoad)(line) for line in open(pathjoin(dir_, 'RECORDS'), 'r'))
+    Parallel(n_jobs=-1)(delayed(innerLoad)(line) for line in open(pathjoin(dir_, 'RECORDS'), 'r'))
     # for line in open(pathjoin(dir_,'RECORDS'),'r'):
     #     rec = line.rstrip()
     #     x,y,i,delta = TimeSince(rec)
