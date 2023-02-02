@@ -41,4 +41,3 @@ class ConvNetMMD(UnifiedModel):
                 id_group[f'model_confidence_{t}'] = modelConfidences[:,i]
             res.append(id_group)
         return pd.concat(res)
-

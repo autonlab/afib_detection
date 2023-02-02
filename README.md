@@ -35,6 +35,9 @@ A directory overview with files of interest explained:
 │   └── utilities.py            # utilities for finding and manipulating h5 source files
 ├── detection
 │   └── application.py
+├── kyle
+│   ├── train_cnn_dg.py #trains convnet with [MMD regularization)(https://machine-learning-note.readthedocs.io/en/latest/math/MMD.html)
+│   └── cv_nntransformer.py #trains transformer net, expects a given test fold index as runtime parameter
 ├── prediction
 │   └── loadData.py
 ├── model
@@ -47,7 +50,7 @@ A directory overview with files of interest explained:
 ├── notebooks
 │   ├── pairwiseLFs.ipynb
 │   ├── restitching.ipynb #restitching ltafdb episodes at specified knit lengths
-│   └── rollingAverageFeaturization.ipynb #normalization by patient baselines - in progress
+│   └── rollingAverageFeaturization.ipynb #normalization by patient baselines
 ├── requirements.txt
 └── README.md
 ```
