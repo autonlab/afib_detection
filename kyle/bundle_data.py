@@ -2,6 +2,7 @@ import wfdb
 import numpy as np
 from os.path import join as pathjoin
 import pickle
+from pathlib import Path
 
 dir_ = '../data/assets/physionet.org/files/ltafdb/1.0.0'
 
@@ -70,6 +71,7 @@ def TimeSince(rec,dir=dir_):
                 y[ idx, j+1] = t_since[idx]
                 delta[ idx, j+1] = True
     return x,y,np.array(i),delta
+
 def innerLoad(line):
     dat = dict()
     rec = line.rstrip()
@@ -77,12 +79,12 @@ def innerLoad(line):
     x,y,i,delta = TimeSince(rec)
     dat[rec] = (x,y,i,delta)
     # cnt += 1
-    pickle.dump((dat,{}),open(f'./bundled/xybundle_{rec}.pkl','wb'))
+    pickle.dump((dat,{}),open(Path(__file__).parent / f'bundled/xybundle_{rec}.pkl','wb'))
 def knitBundles():
     knitData, knitLabels = dict(), dict()
     for line in open(pathjoin(dir_,'RECORDS'),'r'):
         rec = line.rstrip()
-        data, label_code =  pickle.load(open(f'./bundled/xybundle_{rec}.pkl', 'rb'))
+        data, label_code =  pickle.load(open(Path(__file__).parent / f'bundled/xybundle_{rec}.pkl', 'rb'))
         knitData, knitLabels = {**knitData, **data}, {**knitLabels, **label_code}
     return knitData, {'N': 3, 'AFIB': 0, 'VT': 6, 'AB': 4, 'SVTA': 8, 'T': 5, 'B': 7, 'SBR': 1, 'IVR': 2}
 

@@ -24,16 +24,8 @@ from torch.utils.data import DataLoader
 
 from PairedDataLoader import PairedDataLoader
 
-# mlflow to log experiment
-import mlflow
-mlflow.start_run()
-myname = path.basename(__file__)
-mlflow.log_artifact(myname)
-#mlflow.pytorch.autolog(log_models=True)
 
-# Set seeds for reproducibility
-np.random.seed(3)
-torch.manual_seed(3)
+
 
 #######################################################################
 # Helper functions
@@ -114,15 +106,6 @@ def PrepareData(tup,LABEL_CODE):
              for i in np.arange(start,T,stride) if good[i]]
     return dat_
 
-#######################################################################
-# device set up
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print('Using device:', device)
-print()
-
-#################################################################
-# create model
 
 #########################
 # source: https://github.com/jindongwang/transferlearning/blob/master/code/distance/mmd_pytorch.py
@@ -301,152 +284,182 @@ class Net(nn.Module):
         N, M = len(a), len(t)
         scores = np.empty((N,M))
         for i in range(M):
-            _, l1mcdf = self.log_probs(t[i],a)
-            scores[:,i] = l1mcdf.cpu().numpy()
-        return scores
+            lprobs, l1mcdf = self.log_probs(t[i],a)
+            scores[:,i] = l1mcdf.cpu().detach().numpy()
+        return np.exp(scores)
 
     def PatientGeneralizationLoss(self,source, target):
         src = self.cnn(source).mean(-2)
         tgt = self.cnn(target).mean(-2)
         return self.mmd(src, tgt)
 
+if __name__ == '__main__':
+    # mlflow to log experiment
+    import mlflow
+    mlflow.start_run()
+    myname = path.basename(__file__)
+    mlflow.log_artifact(myname)
+    #mlflow.pytorch.autolog(log_models=True)
 
-#######################################################################
-# read data
+    # Set seeds for reproducibility
+    np.random.seed(3)
+    torch.manual_seed(3)
+    #######################################################################
+    # device set up
 
-print('Loading data...')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print('Using device:', device)
+    print()
 
-# data_path = path.join(getcwd(),'xybundle.pkl')
+    #################################################################
+    # create model
 
-# data, LABEL_CODE = pickle.load(open(data_path,'rb'))
-from bundle_data import knitBundles
-data, LABEL_CODE = knitBundles()
-print(LABEL_CODE)
-print('   load complete.')
-print('Preparing data...')
-patients = np.array([k for k in data.keys()])
-# print(patients)
-idx = np.random.random(len(patients))>=0.5
-train_patients = patients[idx]
-test_patients = patients[~idx]
-with open('test_patients.txt', 'w+') as writefile:
-    writefile.write('\n'.join(test_patients))
-with open('train_patients.txt', 'w+') as writefile:
-    writefile.write('\n'.join(train_patients))
-mlflow.log_artifact('train_patients.txt', 'train_patients')
-mlflow.log_artifact('test_patients.txt', 'test_patients')
+    #######################################################################
+    # read data
 
-train_data = [PrepareData(data[pat],LABEL_CODE) for pat in train_patients]
-def y_categories(t,d):
-    if t>=2*60*60: return 2
-    if t>=1*60*60 and d: return 1
-    if d: return 0
-    return -1
+    print('Loading data...')
 
-train_data_y = sum([[y_categories(t,d) for x,t,d in dat] for dat in train_data],[])
-train_data_x = sum([[x for x,t,d in dat] for dat in train_data],[])
-train_data_pat = np.repeat(np.arange(len(train_data)),[len(dat) for dat in train_data])
-train_data_x = [train_data_x[i] for i in range(len(train_data_x)) if train_data_y[i]!=-1]
-train_data_pat = [train_data_pat[i] for i in range(len(train_data_pat)) if train_data_y[i]!=-1]
-train_data_y = [train_data_y[i] for i in range(len(train_data_y)) if train_data_y[i]!=-1]
+    # data_path = path.join(getcwd(),'xybundle.pkl')
 
-pair_loader = PairedDataLoader(train_data_x,buckets=train_data_pat,conditioned_on=train_data_y,batch_size=32)
+    # data, LABEL_CODE = pickle.load(open(data_path,'rb'))
+    from bundle_data import knitBundles
+    data, LABEL_CODE = knitBundles()
+    print(LABEL_CODE)
+    print('   load complete.')
+    print('Preparing data...')
+    patients = np.array([k for k in data.keys()])
+    # print(patients)
+    idx = np.random.random(len(patients))>=0.5
+    train_patients = patients[idx]
+    test_patients = patients[~idx]
+    print(len(train_patients))
+    print(len(test_patients))
+    with open('test_patients.txt', 'w+') as writefile:
+        writefile.write('\n'.join(test_patients))
+    with open('train_patients.txt', 'w+') as writefile:
+        writefile.write('\n'.join(train_patients))
+    mlflow.log_artifact('train_patients.txt', 'train_patients')
+    mlflow.log_artifact('test_patients.txt', 'test_patients')
 
-train_dataloader = DataLoader(sum(train_data,[]), batch_size=32, shuffle=True)
-print("Train class balance:")
-print( ClassBalance(train_dataloader) )
+    train_data = [PrepareData(data[pat],LABEL_CODE) for pat in train_patients]
+    def y_categories(t,d):
+        if t>=2*60*60: return 2
+        if t>=1*60*60 and d: return 1
+        if d: return 0
+        return -1
 
-test_dataloader = DataLoader(sum([PrepareData(data[pat],LABEL_CODE) for pat in test_patients],[]), batch_size=32, shuffle=True)
-print("Test class balance:")
-print( ClassBalance(test_dataloader) )
+    train_data_y = sum([[y_categories(t,d) for x,t,d in dat] for dat in train_data],[])
+    train_data_x = sum([[x for x,t,d in dat] for dat in train_data],[])
+    train_data_pat = np.repeat(np.arange(len(train_data)),[len(dat) for dat in train_data])
+    train_data_x = [train_data_x[i] for i in range(len(train_data_x)) if train_data_y[i]!=-1]
+    train_data_pat = [train_data_pat[i] for i in range(len(train_data_pat)) if train_data_y[i]!=-1]
+    train_data_y = [train_data_y[i] for i in range(len(train_data_y)) if train_data_y[i]!=-1]
 
-print('   prep complete.')
-#################################################################
-# train model
+    pair_loader = PairedDataLoader(train_data_x,buckets=train_data_pat,conditioned_on=train_data_y,batch_size=32)
 
+    train_dataloader = DataLoader(sum(train_data,[]), batch_size=32, shuffle=True)
+    print("Train class balance:")
+    print( ClassBalance(train_dataloader) )
 
-print('Creating model...')
-H = 2*60*60 # 2 hours
-'''
-dataEntry = data[train_patients[1]]
-print(len(dataEntry))
-print(f'X shape: {dataEntry[0].shape}')
-print(f'Y shape: {dataEntry[1].shape}')
-print(f'i shape: {dataEntry[2].shape}')
-print(f'd shape: {dataEntry[3].shape}')
-print(data[train_patients[0]])
-'''
-dat_ = PrepareData(data[train_patients[0]],LABEL_CODE)
-print(dat_)
-x,y,d = dat_[0]
-print(x.shape)
-model = Net(x.shape,H)
-model.to(device)
-print('   model created.')
+    test_dataloader = DataLoader(sum([PrepareData(data[pat],LABEL_CODE) for pat in test_patients],[]), batch_size=32, shuffle=True)
+    print("Test class balance:")
+    print( ClassBalance(test_dataloader) )
 
-print('Training...')
-
-torch.cuda.empty_cache()
-
-best_auc = -np.inf
-
-REPORT_FREQ = 1
-optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-#optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-1)
-for epoch in range(5000):
-    model.train() # set model to training mode
-    avg_loss, c = 0., 0.
-    for x,y,d in train_dataloader:
-        x = x.to(device)
-        y = y.to(device)
-        d = d.to(device)
-        xl, xr = pair_loader.sample()
-        xl = xl.to(device)
-        xr = xr.to(device)
-        optimizer.zero_grad()
-        a = model(x)
-        loss = model.RiskTrajectoryLoss(y,d,a,H) + 0.01* model.PatientGeneralizationLoss(xl, xr)
-        loss.backward()
-        optimizer.step()
-        avg_loss += loss.item()
-        c += 1.
-    avg_loss /= c
-    # print statistics
-    if epoch%REPORT_FREQ == 0:
-        model.eval()
-        with torch.no_grad():
-            print("Epoch %i: training loss: %f"%(epoch,avg_loss))
-            t_eval = np.array([H/8,H/4,H/2,H]) # 15min, 30min, 1hr, 2hr
-            eval_aucs = {}
-            for loader_name,loader in [("train",train_dataloader),("test",test_dataloader)]:
-                scores, labels, good = [], [], []
-                for x,y,d in loader:
-                    x = x.to(device)
-                    a = model(x)
-                    scores_, labels_, good_ = model.ClassifierScores(y,d,a,t_eval)
-                    scores.append(scores_)
-                    labels.append(labels_)
-                    good.append(good_)
-                scores = np.concatenate(scores)
-                labels = np.concatenate(labels)
-                good = np.concatenate(good)
-                aucs = []
-                for i in range(len(t_eval)):
-                    aucs.append( roc_auc_score(labels[good[:,i],i],scores[good[:,i],i]) )
-                print(loader_name+" AUCs: "+', '.join(["%.3f"%v for v in aucs]))
-                eval_aucs[loader_name] = aucs
-            if np.mean(eval_aucs["test"])>best_auc:
-                best_auc = np.mean(eval_aucs["test"])
-                torch.save(model.state_dict(), './bestModel.pt')
-                for i in range(len(t_eval)):
-                    mlflow.log_metric("TrainAUC%i"%int(t_eval[i]/60), eval_aucs["train"][i])
-                    mlflow.log_metric("TestAUC%i"%int(t_eval[i]/60), eval_aucs["test"][i])
+    print('   prep complete.')
+    #################################################################
+    # train model
 
 
+    print('Creating model...')
+    H = 1*60*60 # 1 hours
+    '''
+    dataEntry = data[train_patients[1]]
+    print(len(dataEntry))
+    print(f'X shape: {dataEntry[0].shape}')
+    print(f'Y shape: {dataEntry[1].shape}')
+    print(f'i shape: {dataEntry[2].shape}')
+    print(f'd shape: {dataEntry[3].shape}')
+    print(data[train_patients[0]])
+    '''
+    dat_ = PrepareData(data[train_patients[0]],LABEL_CODE)
+    x,y,d = dat_[0]
+    model = Net(x.shape,H)
+    model.to(device)
+    print(' model created.')
+
+    print('Training...')
+
+    torch.cuda.empty_cache()
+
+    best_auc = -np.inf
+
+    REPORT_FREQ = 1
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-1)
+    for epoch in range(70):
+        model.train() # set model to training mode
+        avg_loss, c = 0., 0.
+        for x,y,d in train_dataloader:
+            x = x.to(device)
+            y = y.to(device)
+            d = d.to(device)
+            xl, xr = pair_loader.sample()
+            xl = xl.to(device)
+            xr = xr.to(device)
+            optimizer.zero_grad()
+            a = model(x)
+            loss = model.RiskTrajectoryLoss(y,d,a,H) + 0.01* model.PatientGeneralizationLoss(xl, xr)
+            loss.backward()
+            optimizer.step()
+            avg_loss += loss.item()
+            c += 1.
+        avg_loss /= c
+        # print statistics
+        if epoch%REPORT_FREQ == 0:
+            model.eval()
+            with torch.no_grad():
+                print("Epoch %i: training loss: %f"%(epoch,avg_loss))
+                t_eval = np.array([H/8,H/4,H/2]) # 7.5min, 15min, 30min
+                eval_aucs = {}
+                for loader_name,loader in [("train",train_dataloader),("test",test_dataloader)]:
+                    scores, labels, good, ttes, deltas = [], [], [], [], []
+                    for x,y,d in loader:
+                        x = x.to(device)
+                        a = model(x)
+                        scores_, labels_, good_ = model.ClassifierScores(y,d,a,t_eval)
+                        ttes.append(y)
+                        scores.append(scores_)
+                        labels.append(labels_)
+                        good.append(good_)
+                        deltas.append(d)
+                    scores = np.concatenate(scores)
+                    labels = np.concatenate(labels)
+                    good = np.concatenate(good)
+                    ttes = np.concatenate(ttes)
+                    deltas = np.concatenate(deltas)
+                    aucs = []
+                    for i in range(len(t_eval)):
+                        aucs.append( roc_auc_score(labels[good[:,i],i],scores[good[:,i],i]) )
+                    print(loader_name+" AUCs: "+', '.join(["%.3f"%v for v in aucs]))
+                    eval_aucs[loader_name] = aucs
+                torch.save(model.state_dict(), './lastModel.pt')
+                with open('lastModelOnTest.pkl', 'wb+') as writefile:
+                    pickle.dump((scores, labels, good, ttes, deltas), writefile)
+                if np.mean(eval_aucs["test"])>best_auc:
+                    best_auc = np.mean(eval_aucs["test"])
+                    torch.save(model.state_dict(), './bestModel.pt')
+                    print(f'Saving: {loader_name}')
+                    with open('bestModelOnTest.pkl', 'wb+') as writefile:
+                        pickle.dump((scores, labels, good, ttes, deltas), writefile)
+                    for i in range(len(t_eval)):
+                        mlflow.log_metric("TrainAUC%i"%int(t_eval[i]/60), eval_aucs["train"][i])
+                        mlflow.log_metric("TestAUC%i"%int(t_eval[i]/60), eval_aucs["test"][i])
 
 
-print('')
-print('done.')
+
+
+    print('')
+    print('done.')
 
 
 
